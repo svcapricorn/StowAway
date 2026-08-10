@@ -20,9 +20,10 @@ interface BarcodeScannerProps {
   isOpen: boolean;
   onClose: () => void;
   onScan: (barcode: string) => void;
+  title?: string;
 }
 
-export function BarcodeScanner({ isOpen, onClose, onScan }: BarcodeScannerProps) {
+export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode' }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -164,7 +165,7 @@ export function BarcodeScanner({ isOpen, onClose, onScan }: BarcodeScannerProps)
               </IconButton>
               
               <Typography variant="subtitle1" sx={{ color: 'white', alignSelf: 'center', fontWeight: 500 }}>
-                  Scan Barcode
+                  {title}
               </Typography>
 
               {hasTorch ? (

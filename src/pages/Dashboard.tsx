@@ -4,7 +4,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, Download, FileText } from 'lucide-react';
+import { Plus, Download, FileText, Tags } from 'lucide-react';
 import { useInventory } from '@/context/InventoryContext';
 import { StatusCard } from '@/components/dashboard/StatusCard';
 import { AlertsList } from '@/components/dashboard/AlertsList';
@@ -61,6 +61,16 @@ export default function Dashboard() {
           startIcon={<Plus />}
         >
           Add Item
+        </Button>
+        <Button
+          component={Link}
+          to="/labels"
+          variant="outlined"
+          size="large"
+          sx={{ minWidth: 64 }}
+          title="Location labels"
+        >
+          <Tags />
         </Button>
         <Button
           variant="outlined"

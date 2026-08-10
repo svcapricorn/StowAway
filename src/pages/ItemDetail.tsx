@@ -10,14 +10,19 @@ import { ItemForm } from '@/components/inventory/ItemForm';
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner';
 import { ObjectScanner, ObjectScanResult } from '@/components/scanner/ObjectScanner';
 import { Button } from '@/components/ui/button';
+import { parseLocationBarcode } from '@/services/barcode';
+import { LOCATION_INFO, StorageLocation } from '@/types';
+import { toast } from '@/hooks/use-toast';
 
 export default function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { getItemById, isLoading } = useInventory();
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanMode, setScanMode] = useState<'location' | 'product'>('location');
   const [showObjectScanner, setShowObjectScanner] = useState(false);
   const [scannedBarcode, setScannedBarcode] = useState<string | undefined>();
+  const [scannedLocation, setScannedLocation] = useState<StorageLocation | undefined>();
   const [identifiedObject, setIdentifiedObject] = useState<ObjectScanResult | null>(null);
 
   const item = id ? getItemById(id) : undefined;
@@ -28,14 +33,25 @@ export default function ItemDetailPage() {
     }
   }, [item, isLoading, id, navigate]);
 
-  const handleBarcodeScan = (barcode: string) => {
-    setScannedBarcode(barcode);
-    setShowBarcodeScanner(false);
-  };
-
-  const handleObjectIdentify = (result: ObjectScanResult) => {
-    setIdentifiedObject(result);
-    setShowObjectScanner(false);
+  const handleScan = (code: string) => {
+    const location = parseLocationBarcode(code);
+    if (location) {
+      setScannedLocation(location);
+      toast({
+        title: 'Location set',
+        description: LOCATION_INFO[location].label,
+      });
+    } else if (scanMode === 'product') {
+      setScannedBarcode(code);
+    } else {
+      toast({
+        title: 'Not a location sticker',
+        description: 'Scan a location label (SMLOC:…) or switch to product barcode mode.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setShowScanner(false);
   };
 
   if (isLoading) {
@@ -54,7 +70,6 @@ export default function ItemDetailPage() {
 
   return (
     <div className="container py-6">
-      {/* Back Button */}
       <Button
         variant="ghost"
         onClick={() => navigate(-1)}
@@ -77,23 +92,29 @@ export default function ItemDetailPage() {
 
         <ItemForm
           existingItem={item}
-          onScanBarcodeRequest={() => setShowBarcodeScanner(true)}
+          onScanLocationRequest={() => { setScanMode('location'); setShowScanner(true); }}
+          onScanProductBarcodeRequest={() => { setScanMode('product'); setShowScanner(true); }}
           onScanObjectRequest={() => setShowObjectScanner(true)}
           scannedBarcode={scannedBarcode}
+          scannedLocation={scannedLocation}
           identifiedObject={identifiedObject}
         />
       </motion.div>
 
       <BarcodeScanner
-        isOpen={showBarcodeScanner}
-        onClose={() => setShowBarcodeScanner(false)}
-        onScan={handleBarcodeScan}
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleScan}
+        title={scanMode === 'location' ? 'Scan Location' : 'Scan Product Barcode'}
       />
 
       <ObjectScanner
         isOpen={showObjectScanner}
         onClose={() => setShowObjectScanner(false)}
-        onIdentify={handleObjectIdentify}
+        onIdentify={(result) => {
+          setIdentifiedObject(result);
+          setShowObjectScanner(false);
+        }}
       />
     </div>
   );

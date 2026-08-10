@@ -11,6 +11,7 @@ import AddItemPage from "@/pages/AddItem";
 import ItemDetailPage from "@/pages/ItemDetail";
 import SettingsPage from "@/pages/Settings";
 import TemplatesPage from "@/pages/Templates";
+import GenerateLabelPage from "@/pages/GenerateLabel";
 import NotFound from "./pages/NotFound";
 import { Toaster } from "@/components/ui/toaster"; // Keeping for smooth transition
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -38,6 +39,7 @@ const AppRoutes = () => {
                         <Route path="/inventory/:id" element={<ItemDetailPage />} />
                         <Route path="/add" element={<AddItemPage />} />
                         <Route path="/settings" element={<SettingsPage />} />
+                        <Route path="/labels" element={<GenerateLabelPage />} />
                         <Route path="/templates" element={<TemplatesPage />} />
                     </Route>
                 </Route>

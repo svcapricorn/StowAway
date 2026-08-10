@@ -44,13 +44,23 @@ import { ObjectScanResult } from '@/components/scanner/ObjectScanner';
 
 interface ItemFormProps {
   existingItem?: InventoryItem;
-  onScanBarcodeRequest?: () => void;
+  onScanLocationRequest?: () => void;
+  onScanProductBarcodeRequest?: () => void;
   onScanObjectRequest?: () => void;
   scannedBarcode?: string;
+  scannedLocation?: StorageLocation;
   identifiedObject?: ObjectScanResult | null;
 }
 
-export function ItemForm({ existingItem, onScanBarcodeRequest, onScanObjectRequest, scannedBarcode, identifiedObject }: ItemFormProps) {
+export function ItemForm({
+  existingItem,
+  onScanLocationRequest,
+  onScanProductBarcodeRequest,
+  onScanObjectRequest,
+  scannedBarcode,
+  scannedLocation,
+  identifiedObject,
+}: ItemFormProps) {
   const navigate = useNavigate();
   const { addItem, updateItem, deleteItem } = useInventory();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,7 +85,7 @@ export function ItemForm({ existingItem, onScanBarcodeRequest, onScanObjectReque
     quantity: existingItem?.quantity?.toString() || '1',
     minQuantity: existingItem?.minQuantity?.toString() || '1',
     expirationDate: existingItem?.expirationDate?.split('T')[0] || '',
-    location: existingItem?.location || 'galley' as StorageLocation,
+    location: existingItem?.location || scannedLocation || 'galley' as StorageLocation,
     barcode: existingItem?.barcode || scannedBarcode || '',
     remaining: existingItem?.remaining || '',
     photos: existingItem?.photos || [] as string[],
@@ -84,7 +94,14 @@ export function ItemForm({ existingItem, onScanBarcodeRequest, onScanObjectReque
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Update barcode when scanned and lookup product
+  // Set location from scanned location sticker
+  useEffect(() => {
+    if (scannedLocation) {
+      setFormData(prev => ({ ...prev, location: scannedLocation }));
+    }
+  }, [scannedLocation]);
+
+  // Update product barcode when scanned and lookup retail product name
   useEffect(() => {
     if (scannedBarcode) {
       setFormData(prev => ({ ...prev, barcode: scannedBarcode }));
@@ -279,24 +296,33 @@ export function ItemForm({ existingItem, onScanBarcodeRequest, onScanObjectReque
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
           <Button
             variant="outlined"
+            onClick={onScanLocationRequest}
+            sx={{ height: 64, flexDirection: 'column', gap: 1 }}
+          >
+            <MapPin size={20} />
+            <Typography variant="caption">Scan Location</Typography>
+          </Button>
+          <Button
+            variant="outlined"
             onClick={onScanObjectRequest}
             sx={{ height: 64, flexDirection: 'column', gap: 1 }}
           >
             <Camera size={20} />
             <Typography variant="caption">Identify Item</Typography>
           </Button>
-          <Button
-            variant="outlined"
-            onClick={onScanBarcodeRequest}
-            sx={{ height: 64, flexDirection: 'column', gap: 1 }}
-          >
-            <QrCode size={20} />
-            <Typography variant="caption">Scan Barcode</Typography>
-          </Button>
         </Box>
+        <Button
+          variant="text"
+          size="small"
+          onClick={onScanProductBarcodeRequest}
+          startIcon={<QrCode size={16} />}
+          sx={{ mt: 1, width: '100%' }}
+        >
+          Scan retail product barcode (optional)
+        </Button>
         {formData.barcode && (
            <Typography variant="caption" color="text.secondary" align="center" display="block" sx={{ mt: 1 }}>
-            Barcode: {formData.barcode}
+            Product barcode: {formData.barcode}
            </Typography>
         )}
       </Paper>

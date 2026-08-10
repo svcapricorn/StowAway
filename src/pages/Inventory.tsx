@@ -2,31 +2,49 @@
 // Full inventory list with filtering
 
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { InventoryList } from '@/components/inventory/InventoryList';
 import { ExcelImportDialog } from '@/components/inventory/ExcelImportDialog';
 import { QuickAddDialog } from '@/components/inventory/QuickAddDialog';
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner';
 import { Box, Typography, Button, Stack } from '@mui/material';
-import { FileSpreadsheet, Scan } from 'lucide-react';
+import { FileSpreadsheet, MapPin } from 'lucide-react';
 import { useInventory } from '@/context/InventoryContext';
-import { InventoryItem } from '@/types';
+import { InventoryItem, LOCATION_INFO } from '@/types';
+import { parseLocationBarcode } from '@/services/barcode';
 import { toast } from '@/hooks/use-toast';
 
 export default function InventoryPage() {
+  const [, setSearchParams] = useSearchParams();
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [quickAddState, setQuickAddState] = useState<{ open: boolean; item?: InventoryItem; barcode?: string }>({ open: false });
   
   const { items, updateItem } = useInventory();
 
-  const handleScan = (barcode: string) => {
-    const found = items.find(i => i.barcode === barcode);
-    setQuickAddState({
-      open: true,
-      item: found,
-      barcode
+  const handleScan = (code: string) => {
+    const location = parseLocationBarcode(code);
+    if (location) {
+      setSearchParams({ location });
+      toast({
+        title: 'Location scanned',
+        description: `Showing items in ${LOCATION_INFO[location].label}`,
+      });
+      return;
+    }
+
+    // Retail product barcode on an existing item (secondary use)
+    const found = items.find(i => i.barcode === code);
+    if (found) {
+      setQuickAddState({ open: true, item: found, barcode: code });
+      return;
+    }
+
+    toast({
+      title: 'Unknown barcode',
+      description: 'Scan a location sticker (SMLOC:…) or a product barcode linked to an item.',
+      variant: 'destructive',
     });
-    // BarcodeScanner closes automatically on scan usually, but we need to ensure state sync if not
   };
 
   const handleConfirmAdd = async (id: string, amount: number) => {
@@ -50,10 +68,10 @@ export default function InventoryPage() {
            <Button 
                 variant="contained" 
                 color="secondary"
-                startIcon={<Scan size={18} />}
+                startIcon={<MapPin size={18} />}
                 onClick={() => setIsScannerOpen(true)}
             >
-                Scan to Add
+                Scan Location
             </Button>
             <Button 
                 variant="outlined" 
@@ -75,7 +93,8 @@ export default function InventoryPage() {
       <BarcodeScanner 
         isOpen={isScannerOpen} 
         onClose={() => setIsScannerOpen(false)} 
-        onScan={handleScan} 
+        onScan={handleScan}
+        title="Scan Location"
       />
       
       <QuickAddDialog 

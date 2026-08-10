@@ -7,15 +7,19 @@ import { ItemForm } from '@/components/inventory/ItemForm';
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner';
 import { ObjectScanner, ObjectScanResult } from '@/components/scanner/ObjectScanner';
 import { Box, Typography } from '@mui/material';
+import { parseLocationBarcode } from '@/services/barcode';
+import { LOCATION_INFO, StorageLocation } from '@/types';
+import { toast } from '@/hooks/use-toast';
 
 export default function AddItemPage() {
   const [searchParams] = useSearchParams();
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanMode, setScanMode] = useState<'location' | 'product'>('location');
   const [showObjectScanner, setShowObjectScanner] = useState(false);
   const [scannedBarcode, setScannedBarcode] = useState<string | undefined>(searchParams.get('barcode') || undefined);
+  const [scannedLocation, setScannedLocation] = useState<StorageLocation | undefined>();
   const [identifiedObject, setIdentifiedObject] = useState<ObjectScanResult | null>(null);
 
-  // Clear URL params after reading
   useEffect(() => {
     if (searchParams.get('barcode')) {
       const url = new URL(window.location.href);
@@ -24,14 +28,38 @@ export default function AddItemPage() {
     }
   }, [searchParams]);
 
-  const handleBarcodeScan = (barcode: string) => {
-    console.log(`[AddItemPage] Received scanned barcode: ${barcode}`);
-    setScannedBarcode(barcode);
-    setShowBarcodeScanner(false);
+  const handleScan = (code: string) => {
+    const location = parseLocationBarcode(code);
+    if (location) {
+      setScannedLocation(location);
+      toast({
+        title: 'Location set',
+        description: LOCATION_INFO[location].label,
+      });
+    } else if (scanMode === 'product') {
+      setScannedBarcode(code);
+    } else {
+      toast({
+        title: 'Not a location sticker',
+        description: 'Scan a location label (SMLOC:…) or switch to product barcode mode.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setShowScanner(false);
+  };
+
+  const openLocationScan = () => {
+    setScanMode('location');
+    setShowScanner(true);
+  };
+
+  const openProductScan = () => {
+    setScanMode('product');
+    setShowScanner(true);
   };
 
   const handleObjectIdentify = (result: ObjectScanResult) => {
-    console.log(`[AddItemPage] Received identified object from scan`, result);
     setIdentifiedObject(result);
     setShowObjectScanner(false);
   };
@@ -46,16 +74,19 @@ export default function AddItemPage() {
       </Box>
 
       <ItemForm
-        onScanBarcodeRequest={() => setShowBarcodeScanner(true)}
+        onScanLocationRequest={openLocationScan}
+        onScanProductBarcodeRequest={openProductScan}
         onScanObjectRequest={() => setShowObjectScanner(true)}
         scannedBarcode={scannedBarcode}
+        scannedLocation={scannedLocation}
         identifiedObject={identifiedObject}
       />
 
       <BarcodeScanner
-        isOpen={showBarcodeScanner}
-        onClose={() => setShowBarcodeScanner(false)}
-        onScan={handleBarcodeScan}
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleScan}
+        title={scanMode === 'location' ? 'Scan Location' : 'Scan Product Barcode'}
       />
 
       <ObjectScanner

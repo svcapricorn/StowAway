@@ -14,7 +14,7 @@ import {
   X
 } from 'lucide-react';
 import { useInventory } from '@/context/InventoryContext';
-import { CATEGORY_INFO, LOCATION_INFO, ItemCategory, InventoryItem } from '@/types';
+import { CATEGORY_INFO, LOCATION_INFO, ItemCategory, InventoryItem, StorageLocation } from '@/types';
 import {
   TextField,
   InputAdornment,
@@ -32,15 +32,22 @@ import { format, differenceInDays } from 'date-fns';
 
 type FilterType = 'all' | 'alerts' | ItemCategory;
 
+const LEGACY_LOCATIONS = ['main-cabin', 'cockpit', 'nav-station', 'forepeak', 'lazarette', 'deck-locker'];
+
 export function InventoryList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { items, stats } = useInventory();
   const [searchQuery, setSearchQuery] = useState('');
   
   const activeFilter = (searchParams.get('category') || searchParams.get('filter') || 'all') as FilterType;
+  const activeLocation = searchParams.get('location') as StorageLocation | null;
 
   const filteredItems = useMemo(() => {
     let result = [...items];
+
+    if (activeLocation && LOCATION_INFO[activeLocation]) {
+      result = result.filter(item => item.location === activeLocation);
+    }
 
     // Apply category/filter
     if (activeFilter === 'alerts') {
@@ -87,7 +94,7 @@ export function InventoryList() {
     });
 
     return result;
-  }, [items, activeFilter, searchQuery]);
+  }, [items, activeFilter, activeLocation, searchQuery]);
 
   const filterOptions: { value: FilterType; label: string; count?: number }[] = [
     { value: 'all', label: 'All Items', count: items.length },
@@ -103,6 +110,14 @@ export function InventoryList() {
     setSearchParams({});
     setSearchQuery('');
   };
+
+  const locationFilterOptions = Object.entries(LOCATION_INFO)
+    .filter(([key]) => !LEGACY_LOCATIONS.includes(key))
+    .map(([value, info]) => ({
+      value: value as StorageLocation,
+      label: info.label,
+      count: items.filter(i => i.location === value).length,
+    }));
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -145,11 +160,40 @@ export function InventoryList() {
         ))}
       </Stack>
 
+      {/* Location filter (from scan or tap) */}
+      <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 1, px: 0.5 }}>
+        {locationFilterOptions.map(({ value, label, count }) => (
+          <Chip
+            key={value}
+            icon={<MapPin size={14} />}
+            label={count > 0 ? `${label} (${count})` : label}
+            onClick={() => {
+              if (activeLocation === value) {
+                const params = new URLSearchParams(searchParams);
+                params.delete('location');
+                setSearchParams(params);
+              } else {
+                const params = new URLSearchParams(searchParams);
+                params.set('location', value);
+                setSearchParams(params);
+              }
+            }}
+            color={activeLocation === value ? 'secondary' : 'default'}
+            variant={activeLocation === value ? 'filled' : 'outlined'}
+            clickable
+            size="small"
+          />
+        ))}
+      </Stack>
+
       {/* Active Filters Banner */}
-      {(activeFilter !== 'all' || searchQuery) && (
+      {(activeFilter !== 'all' || activeLocation || searchQuery) && (
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'action.hover', borderRadius: 1, px: 2, py: 1 }}>
           <Typography variant="caption" color="text.secondary">
             Showing {filteredItems.length} of {items.length} items
+            {activeLocation && LOCATION_INFO[activeLocation] && (
+              <> in {LOCATION_INFO[activeLocation].label}</>
+            )}
           </Typography>
           <Button
             size="small"

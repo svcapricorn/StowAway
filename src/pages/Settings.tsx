@@ -4,7 +4,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  User, 
   Bell, 
   Download, 
   FileText, 
@@ -13,9 +12,10 @@ import {
   ChevronRight,
   Anchor,
   Sparkles,
-  Activity
+  Activity,
+  Tags
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useInventory } from '@/context/InventoryContext';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -24,6 +24,7 @@ import { getFeatures, FEATURE_INFO } from '@/config/featureFlags';
 import { useOktaAuth } from '@okta/okta-react';
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const { settings, exportToCSV, items, stats } = useInventory();
   const { authState, oktaAuth } = useOktaAuth();
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -129,6 +130,13 @@ export default function SettingsPage() {
           description="Download your inventory as a spreadsheet"
           onClick={handleExport}
           disabled={items.length === 0}
+        />
+
+        <SettingsItem
+          icon={<Tags className="h-5 w-5" />}
+          label="Location Labels"
+          description="Print location stickers — scan to set storage area"
+          onClick={() => navigate('/labels')}
         />
         
         <SettingsItem
