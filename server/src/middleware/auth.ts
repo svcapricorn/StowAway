@@ -1,11 +1,13 @@
-import OktaJwtVerifier from '@okta/jwt-verifier';
 import { Request, Response, NextFunction } from 'express';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import prisma from '../lib/prisma';
 
-const oktaJwtVerifier = new OktaJwtVerifier({
-  issuer: process.env.OKTA_ISSUER || '', 
-  clientId: process.env.OKTA_CLIENT_ID
-});
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAudience = process.env.SUPABASE_JWT_AUDIENCE || 'authenticated';
+const supabaseIssuer = supabaseUrl ? new URL('/auth/v1', supabaseUrl).toString().replace(/\/$/, '') : null;
+const supabaseJwks = supabaseUrl
+  ? createRemoteJWKSet(new URL('/auth/v1/.well-known/jwks.json', supabaseUrl))
+  : null;
 
 // Simple in-memory cache to avoid hitting the DB on every request for user sync
 const verifiedUsers = new Set<string>();
@@ -78,16 +80,27 @@ export const verifyToken = async (req: CustomRequest, res: Response, next: NextF
   const accessToken = match[1];
 
   try {
-    const jwt = await oktaJwtVerifier.verifyAccessToken(accessToken, 'api://default');
-    req.userId = jwt.claims.sub;
+    if (!supabaseJwks || !supabaseIssuer) {
+      res.status(500).send('Server auth is not configured');
+      return;
+    }
+
+    const { payload } = await jwtVerify(accessToken, supabaseJwks, {
+      issuer: supabaseIssuer,
+      audience: supabaseAudience,
+    });
+
+    if (typeof payload.sub !== 'string') {
+      res.status(401).send('Unauthorized: Invalid token subject');
+      return;
+    }
+
+    req.userId = payload.sub;
     
     // Only sync if not recently verified to drastically reduce DB load
     if (!verifiedUsers.has(req.userId)) {
       try {
-        // Basic best-effort claim mapping
-        // Note: verifyAccessToken usually returns limited claims. 
-        // Ideally we would hit /userinfo for full profile, but this is lighter.
-        const email = (jwt.claims.email as string) || (jwt.claims.sub + '@placeholder.okta');
+        const email = typeof payload.email === 'string' ? payload.email : `${payload.sub}@placeholder.supabase`;
         
         // Upsert User
         await prisma.user.upsert({
@@ -112,8 +125,7 @@ export const verifyToken = async (req: CustomRequest, res: Response, next: NextF
         });
         verifiedUsers.add(req.userId);
       } catch (e) {
-        // Log but don't block auth - though subsequent DB calls might fail on FK
-        console.error("Failed to sync okta user", e);
+        console.error('Failed to sync Supabase user', e);
       }
     }
 

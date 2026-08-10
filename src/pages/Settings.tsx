@@ -16,17 +16,17 @@ import {
   Tags
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import { useInventory } from '@/context/InventoryContext';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { getFeatures, FEATURE_INFO } from '@/config/featureFlags';
-import { useOktaAuth } from '@okta/okta-react';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { settings, exportToCSV, items, stats } = useInventory();
-  const { authState, oktaAuth } = useOktaAuth();
+  const { getAccessToken, isAuthenticated, isConfigured, signOut, user } = useAuth();
   const [pingResult, setPingResult] = useState<string | null>(null);
   const features = getFeatures(settings.subscriptionTier);
 
@@ -212,15 +212,21 @@ export default function SettingsPage() {
              </div>
              <div className="text-sm space-y-1">
                  <div className="flex justify-between">
-                     <span className="text-muted-foreground">Okta Auth:</span>
-                     <span className={authState?.isAuthenticated ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
-                        {authState?.isAuthenticated ? "Authenticated" : "Not Authenticated"}
+                   <span className="text-muted-foreground">Supabase Auth:</span>
+                   <span className={isAuthenticated ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
+                    {isAuthenticated ? "Authenticated" : "Not Authenticated"}
                      </span>
                  </div>
-                 {authState?.isAuthenticated && (
+                 <div className="flex justify-between">
+                   <span className="text-muted-foreground">Configuration:</span>
+                   <span className={isConfigured ? "text-green-500 font-medium" : "text-amber-500 font-medium"}>
+                    {isConfigured ? "Ready" : "Missing env vars"}
+                   </span>
+                 </div>
+                 {user && (
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">User:</span>
-                        <span>{authState.idToken?.claims.name || authState.idToken?.claims.email}</span>
+                    <span>{user.email}</span>
                     </div>
                  )}
                  <div className="flex justify-between items-center pt-2">
@@ -231,7 +237,7 @@ export default function SettingsPage() {
                         onClick={async () => {
                             setPingResult('Testing...');
                             try {
-                                const token = oktaAuth.getAccessToken();
+                        const token = await getAccessToken();
                                 const headers: any = {};
                                 if (token) headers['Authorization'] = `Bearer ${token}`;
                                 
@@ -252,6 +258,11 @@ export default function SettingsPage() {
                         Test Connection
                      </Button>
                  </div>
+                       <div className="flex justify-end pt-2">
+                         <Button variant="outline" onClick={() => void signOut()}>
+                          Sign Out
+                         </Button>
+                       </div>
                  {pingResult && (
                      <div className="p-2 bg-muted rounded text-xs break-all mt-2">
                          {pingResult}

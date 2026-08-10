@@ -1,6 +1,6 @@
 // SailMed Tracker - Database Adapter (Switching from Dexie to API)
 import type { InventoryItem, Alert, AppSettings } from '@/types';
-import { oktaAuth } from '@/config/okta';
+import { supabase } from '@/config/supabase';
 
 // Helper to get headers with token
 const getHeaders = async () => {
@@ -12,7 +12,8 @@ const getHeaders = async () => {
     };
   }
   
-  const token = oktaAuth.getAccessToken();
+  const { data } = await supabase?.auth.getSession() ?? { data: { session: null } };
+  const token = data.session?.access_token;
   return {
     'Content-Type': 'application/json',
     'Authorization': token ? `Bearer ${token}` : '',

@@ -42,13 +42,13 @@ model InventoryItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   
-  // Ownership (from Okta user ID)
+  // Ownership (from authenticated user ID)
   userId         String
   user           User     @relation(fields: [userId], references: [id])
 }
 
 model User {
-  id        String   @id // matches Okta ID
+  id        String   @id // matches auth provider user id
   email     String   @unique
   firstName String?
   lastName  String?

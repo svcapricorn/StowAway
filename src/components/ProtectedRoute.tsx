@@ -1,38 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { useOktaAuth } from '@okta/okta-react';
-import { Outlet } from 'react-router-dom';
-import { CircularProgress, Box, Alert, AlertTitle, Button } from '@mui/material';
+import { Outlet, Navigate } from 'react-router-dom';
+import { CircularProgress, Box, Alert, AlertTitle } from '@mui/material';
+import { useAuth } from '@/context/AuthContext';
 
 const ProtectedRoute = () => {
-    const { oktaAuth, authState } = useOktaAuth();
-    const [loginError, setLoginError] = useState<Error | null>(null);
     const isMockAuth = import.meta.env.VITE_MOCK_AUTH === 'true';
-
-    useEffect(() => {
-        if (isMockAuth) {
-             console.log("Mock Auth Enabled - Skipping Okta");
-             return;
-        }
-
-        if (!authState) {
-            return;
-        }
-
-        if (!authState?.isAuthenticated) {
-            const originalUri = window.location.pathname;
-            oktaAuth.setOriginalUri(originalUri);
-            oktaAuth.signInWithRedirect().catch(err => {
-                console.error("Okta Login Failed:", err);
-                setLoginError(err);
-            });
-        }
-    }, [oktaAuth, !!authState, authState?.isAuthenticated]);
+    const { isAuthenticated, isConfigured, loading } = useAuth();
 
     if (isMockAuth) {
         return <Outlet />;
     }
 
-    if (loginError) {
+    if (!isConfigured) {
         return (
             <Box sx={{ 
                 display: 'flex', 
@@ -41,30 +19,27 @@ const ProtectedRoute = () => {
                 alignItems: 'center',
                 p: 2
             }}>
-                <Alert 
-                    severity="error"
-                    action={
-                        <Button color="inherit" size="small" onClick={() => window.location.reload()}>
-                            Retry
-                        </Button>
-                    }
-                >
-                    <AlertTitle>Authentication Error</AlertTitle>
-                    {loginError.message}
+                <Alert severity="warning">
+                    <AlertTitle>Authentication Not Configured</AlertTitle>
+                    Supabase authentication is enabled, but the frontend environment variables are missing.
                     <Box sx={{ mt: 1, fontSize: '0.85em', opacity: 0.9 }}>
-                        Check that your Okta Application is configured as a <strong>Single Page App (SPA)</strong> and PKCE is enabled.
+                        Add <strong>VITE_SUPABASE_URL</strong> and <strong>VITE_SUPABASE_ANON_KEY</strong>, then redeploy.
                     </Box>
                 </Alert>
             </Box>
         );
     }
 
-    if (!authState || !authState?.isAuthenticated) {
+    if (loading) {
         return (
             <Box sx={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center' }}>
                 <CircularProgress />
             </Box>
         );
+    }
+
+    if (!isAuthenticated) {
+        return <Navigate to="/login" replace />;
     }
 
     return <Outlet />;
