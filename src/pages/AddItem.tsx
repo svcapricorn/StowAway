@@ -1,4 +1,4 @@
-// SailMed Tracker - Add Item Page
+// StowAway Tracker - Add Item Page
 // Form for adding new inventory items
 
 import React, { useState, useEffect } from 'react';

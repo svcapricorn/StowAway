@@ -1,4 +1,4 @@
-// SailMed Tracker - Inventory List Component
+// StowAway Tracker - Inventory List Component
 // Displays all inventory items with filtering and search
 
 import React, { useState, useMemo } from 'react';

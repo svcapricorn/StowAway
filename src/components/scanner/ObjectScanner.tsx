@@ -1,4 +1,4 @@
-// SailMed Tracker - Object Scanner Component
+// StowAway Tracker - Object Scanner Component
 // Uses device camera to capture and identify medical supplies
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
@@ -16,6 +16,7 @@ import {
     Stack
 } from '@mui/material';
 import { ItemCategory } from '@/types';
+import { API_URL, getHeaders } from '@/lib/database';
 
 interface ObjectScannerProps {
   isOpen: boolean;
@@ -53,6 +54,44 @@ const MEDICAL_SUPPLY_PATTERNS: { keywords: string[]; name: string; category: Ite
   { keywords: ['eye wash', 'saline'], name: 'Eye Wash Solution', category: 'first-aid' },
 ];
 
+// Identify a photo server-side so the vision API key never reaches the browser
+async function identifyViaBackend(imageData: string): Promise<ObjectScanResult | null> {
+  try {
+    const headers = await getHeaders();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(`${API_URL}/vision/identify`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({ imageData }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.warn('Vision backend returned non-200 status:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.name && data.category) {
+      return {
+        name: data.name,
+        category: data.category,
+        confidence: typeof data.confidence === 'number' ? data.confidence : 0.85,
+        image: imageData,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.error('Vision backend request failed:', err);
+    return null;
+  }
+}
+
 export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,6 +102,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
+  const [identificationFailed, setIdentificationFailed] = useState(false);
 
   const startCamera = useCallback(async () => {
     setIsInitializing(true);
@@ -127,6 +167,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
           stopCamera();
           setCapturedImage(null);
           setIsAnalyzing(false);
+          setIdentificationFailed(false);
       }
       return () => stopCamera();
   }, [isOpen, startCamera, stopCamera]);
@@ -156,68 +197,9 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
 
   const analyzeImage = useCallback(async (imageData: string) => {
     // setIsAnalyzing(true); // Already set in captureImage
-    let result: ObjectScanResult | null = null;
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    
-    // 1. Try OpenAI if key is present and looks valid (not a placeholder)
-    if (apiKey && apiKey.startsWith('sk-')) {
-        try {
-          // ... (OpenAI logic)
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); 
-  
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            signal: controller.signal,
-            body: JSON.stringify({
-              model: "gpt-4o-mini",
-              messages: [
-                {
-                  role: "system",
-                  content: "You are a medical inventory assistant. Identify the medical supply item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging. Prioritize text found on the label (Brand, Chemical Name, Dosage) to determine the item 'name'. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, diagnostic, ppe, other), and 'confidence' (number 0-1)."
-                },
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: "Identify this medical item. Read all visible text on the packaging, bottle, or box to determine exactly what it is. Include dosage or specific type if visible." },
-                    { type: "image_url", image_url: { url: imageData } }
-                  ]
-                }
-              ],
-              max_tokens: 300
-            })
-          });
-          
-          clearTimeout(timeoutId);
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.choices && data.choices[0]?.message?.content) {
-              const content = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
-              const parsed = JSON.parse(content);
-              if (parsed.name && parsed.category) {
-                result = {
-                  name: parsed.name,
-                  category: parsed.category,
-                  confidence: parsed.confidence || 0.85,
-                  image: imageData
-                };
-              }
-            }
-          } else {
-             console.warn("OpenAI returned non-200 status:", response.status);
-          }
-        } catch (error) {
-           console.error("AI Analysis failed:", error);
-           // Fall through to Tesseract
-        }
-    }
-    
-    // 2. Fallback to Local OCR (Tesseract) if no result yet
+    let result: ObjectScanResult | null = await identifyViaBackend(imageData);
+
+    // Fallback to local OCR (Tesseract) if the backend couldn't identify it
     if (!result) {
          console.log("Using local OCR (Tesseract.js)...");
          try {
@@ -259,19 +241,9 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     }
 
     if (!result) {
-      console.log('Using simulation fallback...');
-      // Reduced delay for better perceived performance
-      await new Promise(resolve => setTimeout(resolve, 500)); 
-
-      const randomIndex = Math.floor(Math.random() * MEDICAL_SUPPLY_PATTERNS.length);
-      const identified = MEDICAL_SUPPLY_PATTERNS[randomIndex];
-
-      result = {
-        name: identified.name,
-        category: identified.category,
-        confidence: 0.75 + Math.random() * 0.2,
-        image: imageData
-      };
+      setIsAnalyzing(false);
+      setIdentificationFailed(true);
+      return;
     }
 
     if ('vibrate' in navigator) navigator.vibrate(100);
@@ -285,6 +257,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     
     // Set loading state explicitly before processing to avoid UI stall feeling
     setIsAnalyzing(true);
+    setIdentificationFailed(false);
 
     // Small delay to allow React to render the loading state before synchronous canvas work
     setTimeout(() => {
@@ -353,6 +326,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
   const retakePhoto = () => {
     setCapturedImage(null);
     setIsAnalyzing(false);
+    setIdentificationFailed(false);
     // Video playback resumption is handled by the new useEffect
   };
 
@@ -453,6 +427,22 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                          }>
                             {error}
                         </Alert>
+                    </Box>
+                )}
+
+                {identificationFailed && !error && (
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.8)', p: 3 }}>
+                        <Stack spacing={2} sx={{ width: '100%', maxWidth: 400 }}>
+                            <Alert severity="warning" variant="filled">
+                                Couldn't identify this item. Try better lighting, or fill in the details yourself.
+                            </Alert>
+                            <Button variant="contained" color="secondary" startIcon={<RefreshCw />} onClick={retakePhoto}>
+                                Retake Photo
+                            </Button>
+                            <Button variant="outlined" color="inherit" sx={{ color: 'white', borderColor: 'white' }} onClick={onClose}>
+                                Enter Details Manually
+                            </Button>
+                        </Stack>
                     </Box>
                 )}
             </Box>

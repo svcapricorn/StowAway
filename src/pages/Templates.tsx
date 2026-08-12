@@ -1,4 +1,4 @@
-// SailMed Tracker - Regulatory Templates Page
+// StowAway Tracker - Regulatory Templates Page
 // Non-enforcing reference templates from maritime authorities
 
 import React from 'react';

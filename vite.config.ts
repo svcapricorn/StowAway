@@ -15,8 +15,8 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'placeholder.svg'],
       manifest: {
-        name: 'SailMed Safe Haven',
-        short_name: 'SailMed',
+        name: 'StowAway Safe Haven',
+        short_name: 'StowAway',
         description: 'Inventory Management System',
         theme_color: '#ffffff',
         icons: [

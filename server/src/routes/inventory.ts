@@ -13,6 +13,88 @@ router.get('/ping', (req, res) => {
   res.json({ status: 'ok', userId });
 });
 
+// Identify a photographed item via OpenAI vision, keeping the API key server-side only
+router.post('/vision/identify', async (req: Request, res: Response) => {
+  const { imageData } = req.body as { imageData?: string };
+
+  if (!imageData || typeof imageData !== 'string' || !imageData.startsWith('data:image')) {
+    res.status(400).json({ error: 'imageData must be a base64 image data URL' });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: 'Vision identification is not configured on the server' });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content:
+              "You are a medical inventory assistant. Identify the medical supply item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging. Prioritize text found on the label (Brand, Chemical Name, Dosage) to determine the item 'name'. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, diagnostic, ppe, other), and 'confidence' (number 0-1).",
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Identify this medical item. Read all visible text on the packaging, bottle, or box to determine exactly what it is. Include dosage or specific type if visible.',
+              },
+              { type: 'image_url', image_url: { url: imageData } },
+            ],
+          },
+        ],
+        max_tokens: 300,
+      }),
+    });
+
+    if (!response.ok) {
+      res.status(502).json({ error: 'Vision provider returned an error' });
+      return;
+    }
+
+    const data = await response.json() as { choices?: { message?: { content?: string } }[] };
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      res.status(502).json({ error: 'Vision provider returned no content' });
+      return;
+    }
+
+    const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+
+    if (!parsed.name || !parsed.category) {
+      res.status(502).json({ error: 'Vision provider returned an incomplete result' });
+      return;
+    }
+
+    res.json({
+      name: parsed.name,
+      category: parsed.category,
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.85,
+    });
+  } catch (error) {
+    console.error('Vision identify failed:', error);
+    res.status(502).json({ error: 'Vision identification failed' });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+});
+
 // Helper for safe parsing
 const safeParse = (str: string | null | undefined): string[] => {
   if (!str) return [];

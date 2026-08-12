@@ -1,4 +1,4 @@
-// SailMed Tracker - Barcode Scanner Component
+// StowAway Tracker - Barcode Scanner Component
 // Uses device camera to scan barcodes and QR codes
 
 import React, { useEffect, useRef, useState } from 'react';

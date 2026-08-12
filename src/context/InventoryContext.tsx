@@ -1,4 +1,4 @@
-// SailMed Tracker - Inventory Context
+// StowAway Tracker - Inventory Context
 // Global state management for inventory data
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';

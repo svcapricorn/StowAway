@@ -1,5 +1,5 @@
 {
-  "name": "sailmed-server",
+  "name": "stowaway-server",
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {

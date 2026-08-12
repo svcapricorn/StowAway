@@ -71,7 +71,7 @@ export default function LoginPage() {
             <Stack spacing={1} alignItems="center" textAlign="center">
               <Anchor size={30} />
               <Typography variant="h4" fontWeight={700}>
-                SailMed Sign In
+                StowAway Sign In
               </Typography>
               <Typography color="text.secondary">
                 Use Supabase Auth with email and password, or request a secure magic link.

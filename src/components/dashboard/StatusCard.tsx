@@ -1,4 +1,4 @@
-// SailMed Tracker - Status Card Component
+// StowAway Tracker - Status Card Component
 // Displays overall kit status with maritime-themed messaging
 
 import React from 'react';

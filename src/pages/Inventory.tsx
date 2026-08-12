@@ -1,4 +1,4 @@
-// SailMed Tracker - Inventory Page
+// StowAway Tracker - Inventory Page
 // Full inventory list with filtering
 
 import React, { useState } from 'react';

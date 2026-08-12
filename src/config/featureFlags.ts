@@ -1,4 +1,4 @@
-// SailMed Tracker - Feature Flags
+// StowAway Tracker - Feature Flags
 // Designed for future monetization without implementing payments
 
 import { SubscriptionTier } from '@/types';

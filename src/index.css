@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* SailMed Tracker Design System - Maritime Theme */
+/* StowAway Tracker Design System - Maritime Theme */
 /* All colors in HSL for proper theming */
 
 @layer base {
@@ -216,12 +216,12 @@
 }
 
 /* Namespace for embedded mode - prevents CSS collisions */
-.sailmed-tracker {
+.stowaway-tracker {
   all: initial;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-.sailmed-tracker * {
+.stowaway-tracker * {
   box-sizing: border-box;
 }
 

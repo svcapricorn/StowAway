@@ -313,7 +313,7 @@ export function ExcelImportDialog({ open, onClose }: ExcelImportDialogProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'sailmed_inventory_template.xlsx';
+    a.download = 'stowaway_inventory_template.xlsx';
     a.click();
     URL.revokeObjectURL(url);
   };

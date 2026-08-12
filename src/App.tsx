@@ -14,6 +14,7 @@ import SettingsPage from "@/pages/Settings";
 import TemplatesPage from "@/pages/Templates";
 import GenerateLabelPage from "@/pages/GenerateLabel";
 import LoginPage from "@/pages/Login";
+import AuthCallbackPage from "@/pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 import { Toaster } from "@/components/ui/toaster"; // Keeping for smooth transition
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -24,6 +25,7 @@ const queryClient = new QueryClient();
 const AppRoutes = () => (
   <Routes>
     <Route path="/login" element={<LoginPage />} />
+    <Route path="/auth/callback" element={<AuthCallbackPage />} />
     <Route element={<ProtectedRoute />}>
       <Route element={<AppShell />}>
         <Route path="/" element={<Dashboard />} />

@@ -1,4 +1,4 @@
-// SailMed Tracker - Core Types
+// StowAway Tracker - Core Types
 
 export type UserRole = 'captain' | 'medic' | 'crew';
 

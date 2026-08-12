@@ -1,4 +1,4 @@
-// SailMed Tracker - Item Form Component
+// StowAway Tracker - Item Form Component
 // Add or edit inventory items
 
 import React, { useState, useEffect } from 'react';
@@ -109,7 +109,8 @@ export function ItemForm({
       const fetchProductData = async () => {
         setIsLookingUp(true);
         try {
-          // OpenFoodFacts API (Free, no key required)
+          // OpenFoodFacts API (Free, no key required). Coverage skews toward food items,
+          // so most medical/first-aid barcodes will come back as "not found".
           const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${scannedBarcode}.json`);
           const data = await response.json();
           
@@ -121,10 +122,25 @@ export function ItemForm({
                  title: "Product Found",
                  description: `Identified as: ${productName}`,
                });
+            } else {
+               toast({
+                 title: "No product details found",
+                 description: `Barcode ${scannedBarcode} was recognized but has no name on file. Fill in the details manually.`,
+               });
             }
+          } else {
+            toast({
+              title: "Product not found",
+              description: `No public listing for barcode ${scannedBarcode}. Fill in the details manually.`,
+            });
           }
         } catch (error) {
           console.error("Barcode lookup failed", error);
+          toast({
+            title: "Lookup failed",
+            description: "Couldn't reach the product database. Fill in the details manually.",
+            variant: "destructive",
+          });
         } finally {
           setIsLookingUp(false);
         }

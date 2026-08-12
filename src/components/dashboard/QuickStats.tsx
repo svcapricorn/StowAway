@@ -1,4 +1,4 @@
-// SailMed Tracker - Quick Stats Component
+// StowAway Tracker - Quick Stats Component
 // Displays category breakdown and quick numbers
 
 import React from 'react';

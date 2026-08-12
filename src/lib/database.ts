@@ -1,9 +1,9 @@
-// SailMed Tracker - Database Adapter (Switching from Dexie to API)
+// StowAway Tracker - Database Adapter (Switching from Dexie to API)
 import type { InventoryItem, Alert, AppSettings } from '@/types';
 import { supabase } from '@/config/supabase';
 
 // Helper to get headers with token
-const getHeaders = async () => {
+export const getHeaders = async () => {
   if (import.meta.env.VITE_MOCK_AUTH === 'true' || window.location.hostname === 'localhost') {
     return {
       'Content-Type': 'application/json',
@@ -22,13 +22,13 @@ const getHeaders = async () => {
 
 // FORCE LOCALHOST for debugging if we are running locally
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_URL = isLocal ? 'http://localhost:3001/api/inventory' : (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/inventory');
+export const API_URL = isLocal ? 'http://localhost:3001/api/inventory' : (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/inventory');
 
 console.log(`[Database] Using API_URL: ${API_URL}`);
 
 // Fallback Settings DB (Local only for now, or move to backend later)
 import Dexie, { type EntityTable } from 'dexie';
-const db = new Dexie('SailMedLocal') as any;
+const db = new Dexie('StowAwayLocal') as any;
 db.version(1).stores({ 
   settings: 'id',
   alerts: '++id, createdAt, acknowledged'

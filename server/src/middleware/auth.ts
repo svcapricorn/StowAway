@@ -109,7 +109,7 @@ export const verifyToken = async (req: CustomRequest, res: Response, next: NextF
           create: {
             id: req.userId,
             email: email,
-            firstName: 'SailMed', // Helper defaults until profile edit implemented
+            firstName: 'StowAway', // Helper defaults until profile edit implemented
             lastName: 'User',
             // Create default settings immediately
             settings: {

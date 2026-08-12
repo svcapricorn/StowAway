@@ -1,4 +1,4 @@
-// SailMed Tracker - Item Detail Page
+// StowAway Tracker - Item Detail Page
 // View and edit individual items
 
 import React, { useState, useEffect } from 'react';
