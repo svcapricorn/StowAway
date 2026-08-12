@@ -7,10 +7,10 @@ import {
   LayoutDashboard, 
   Package, 
   Plus, 
-  Settings,
-  Anchor
+  Settings
 } from 'lucide-react';
 import { useInventory } from '@/context/InventoryContext';
+import { StowAwayLogo } from '@/components/StowAwayLogo';
 import { 
   AppBar, 
   Toolbar, 
@@ -52,7 +52,7 @@ export function AppShell() {
       {/* Header */}
       <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>
         <Toolbar>
-          <Anchor size={24} style={{ marginRight: 12 }} />
+          <StowAwayLogo size={28} style={{ marginRight: 12 }} />
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
             StowAway
           </Typography>

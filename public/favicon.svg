@@ -1,0 +1,28 @@
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Filled navy background so the mark reads at 16-32px -->
+  <circle cx="60" cy="60" r="58" fill="#1D4063" />
+
+  <!-- Glasses -->
+  <circle cx="42" cy="28" r="8" fill="none" stroke="#FAF9F5" stroke-width="3" />
+  <circle cx="78" cy="28" r="8" fill="none" stroke="#FAF9F5" stroke-width="3" />
+  <line x1="50" y1="28" x2="70" y2="28" stroke="#FAF9F5" stroke-width="3" stroke-linecap="round" />
+
+  <!-- Accent Dot (Teal) -->
+  <circle cx="42" cy="28" r="3" fill="#2EB89C" />
+
+  <!-- Arrow (Stow Action) -->
+  <path d="M 60 40 L 60 60" stroke="#FAF9F5" stroke-width="4" stroke-linecap="round" fill="none" />
+  <path d="M 52 54 L 60 64 L 68 54" stroke="#FAF9F5" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Container/Mouth -->
+  <path
+    d="M 38 72 Q 38 68 42 68 L 78 68 Q 82 68 82 72 L 80 84 Q 80 86 78 86 L 42 86 Q 40 86 40 84 Z"
+    fill="none" stroke="#2EB89C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+  />
+
+  <!-- Wave (Maritime) -->
+  <path
+    d="M 32 94 Q 36 91 40 94 Q 44 97 48 94 Q 52 91 56 94 Q 60 97 64 94 Q 68 91 72 94 Q 76 97 80 94 Q 84 91 88 94"
+    fill="none" stroke="#2EB89C" stroke-width="2.5" stroke-linecap="round" opacity="0.9"
+  />
+</svg>
