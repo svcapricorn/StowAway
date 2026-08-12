@@ -1,6 +1,7 @@
 import { Router, Response, Request } from 'express';
 import { CustomRequest, verifyToken } from '../middleware/auth';
 import prisma from '../lib/prisma';
+import { safeParse, safeDate } from '../lib/parsing';
 
 const router = Router();
 
@@ -94,25 +95,6 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
     clearTimeout(timeoutId);
   }
 });
-
-// Helper for safe parsing
-const safeParse = (str: string | null | undefined): string[] => {
-  if (!str) return [];
-  if (str === '[]') return [];
-  try {
-    const parsed = JSON.parse(str);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-// Helper for date parsing
-const safeDate = (dateVal: any): Date | null => {
-  if (!dateVal) return null;
-  const parsed = new Date(dateVal);
-  return isNaN(parsed.getTime()) ? null : parsed;
-};
 
 // GET all items for the logged-in user
 router.get('/', async (req: Request, res: Response) => {

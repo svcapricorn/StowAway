@@ -21,7 +21,7 @@ import { useInventory } from '@/context/InventoryContext';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { getFeatures, FEATURE_INFO } from '@/config/featureFlags';
+import { getFeatures } from '@/config/featureFlags';
 
 export default function SettingsPage() {
   const navigate = useNavigate();

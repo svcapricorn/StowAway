@@ -1,5 +1,5 @@
 // StowAway Tracker - Database Adapter (Switching from Dexie to API)
-import type { InventoryItem, Alert, AppSettings } from '@/types';
+import type { InventoryItem, AppSettings } from '@/types';
 import { supabase } from '@/config/supabase';
 
 // Helper to get headers with token
@@ -30,10 +30,8 @@ console.log(`[Database] Using API_URL: ${API_URL}`);
 import Dexie, { type EntityTable } from 'dexie';
 const db = new Dexie('StowAwayLocal') as any;
 db.version(1).stores({ 
-  settings: 'id',
-  alerts: '++id, createdAt, acknowledged'
+  settings: 'id'
 });
-// Removed duplicate export of settingsDB here
 
 
 // Inventory operations via API
@@ -142,34 +140,6 @@ export const inventoryDB = {
   async getLowStock(): Promise<InventoryItem[]> {
     const items = await this.getAll();
     return items.filter((item) => item.quantity <= item.minQuantity);
-  },
-};
-
-// Alert operations
-export const alertsDB = {
-  async getAll(): Promise<Alert[]> {
-    return db.alerts.orderBy('createdAt').reverse().toArray();
-  },
-
-  async getUnacknowledged(): Promise<Alert[]> {
-    return db.alerts.where('acknowledged').equals(0).toArray();
-  },
-
-  async add(alert: Alert): Promise<string> {
-    return db.alerts.add(alert);
-  },
-
-  async acknowledge(id: string): Promise<void> {
-    await db.alerts.update(id, { acknowledged: true });
-  },
-
-  async delete(id: string): Promise<void> {
-    await db.alerts.delete(id);
-  },
-
-  async clearOld(daysOld: number): Promise<void> {
-    const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString();
-    await db.alerts.where('createdAt').below(cutoff).delete();
   },
 };
 

@@ -34,6 +34,37 @@ npm run dev
 npm run server
 ```
 
+## Testing
+
+Both the frontend and the backend have automated test suites built with [Vitest](https://vitest.dev/).
+
+- Frontend: Vitest + React Testing Library (jsdom environment), covering components, pages, hooks, contexts, and services.
+- Backend (`server/`): Vitest + Supertest, covering auth middleware and the inventory API routes against a mocked Prisma client.
+
+### Running the frontend tests
+
+From the project root:
+
+```sh
+npm test              # run once
+npm run test:watch    # watch mode
+npm run test:coverage # run with a coverage report
+```
+
+### Running the server tests
+
+```sh
+cd server
+npm test              # run once
+npm run test:watch    # watch mode
+npm run test:coverage # run with a coverage report
+```
+
+### Current coverage
+
+- Backend: ~87% statement coverage (auth middleware, all CRUD routes, vision/identify endpoint, and parsing helpers are covered).
+- Frontend: ~60% statement coverage and climbing. Core data flows (inventory CRUD via `database.ts`, `AuthContext`, `InventoryContext`, dashboard/inventory pages, label printing, barcode/object scanner error handling) all have test coverage. The remaining gaps are mostly deep, hard-to-simulate camera/canvas interactions in `BarcodeScanner`/`ObjectScanner` and a few large form components.
+
 ## Production Architecture
 
 - Frontend: static build on S3 + CloudFront
@@ -232,3 +263,21 @@ Without this, any deep link (email confirmation, magic link, bookmarked page, br
 - The backend verifies Supabase bearer tokens with the project's JWKS endpoint.
 - For local-only bypass during development, VITE_MOCK_AUTH=true still skips hosted auth.
 - Do not commit `.env` or `server/.env` files; commit only `.env.example` templates.
+
+## Brand Colors
+
+Defined in [src/theme.ts](src/theme.ts) and [src/index.css](src/index.css) (source of truth is HSL).
+
+| Name | Hex | HSL |
+|---|---|---|
+| Primary — Deep Navy | `#1D4063` | hsl(210, 55%, 25%) |
+| Secondary — Seafoam Teal | `#2EB89C` | hsl(168, 60%, 45%) |
+| Background — Warm Cream | `#FAF9F5` | hsl(45, 33%, 97%) |
+| Error — Coral | `#E25936` | hsl(12, 75%, 55%) |
+| Warning — Amber | `#F4A825` | hsl(38, 90%, 55%) |
+| Success — Sea Green | `#24A878` | hsl(158, 65%, 40%) |
+| Text — Deep Navy Text | `#1A334D` | hsl(210, 50%, 20%) |
+
+## License
+
+Copyright (c) 2026 Lisa M. Lilley. All rights reserved. See [LICENSE](LICENSE).
