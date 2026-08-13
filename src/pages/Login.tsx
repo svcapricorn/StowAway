@@ -12,8 +12,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Anchor } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { StowAwayLogo } from '@/components/StowAwayLogo';
 
 export default function LoginPage() {
   const { isAuthenticated, isConfigured, loading, signInWithMagicLink, signInWithPassword, signUp } = useAuth();
@@ -69,7 +69,7 @@ export default function LoginPage() {
         <CardContent sx={{ p: 4 }}>
           <Stack spacing={3}>
             <Stack spacing={1} alignItems="center" textAlign="center">
-              <Anchor size={30} />
+              <StowAwayLogo size={48} color="#1976d2" />
               <Typography variant="h4" fontWeight={700}>
                 StowAway Sign In
               </Typography>

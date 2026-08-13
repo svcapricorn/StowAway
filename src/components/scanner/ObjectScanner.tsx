@@ -3,8 +3,9 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Camera, Flashlight, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { X, Camera, Flashlight, Loader2, RefreshCw, AlertCircle, Check } from 'lucide-react';
 import { createWorker } from 'tesseract.js';
+import { BrowserMultiFormatReader, NotFoundException, BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { 
     Dialog, 
     IconButton, 
@@ -29,6 +30,8 @@ export interface ObjectScanResult {
   category: ItemCategory;
   confidence: number;
   image?: string;
+  /** UPC/EAN barcode read from the item's packaging, if one was visible */
+  barcode?: string;
 }
 
 const MEDICAL_SUPPLY_PATTERNS: { keywords: string[]; name: string; category: ItemCategory }[] = [
@@ -92,9 +95,58 @@ async function identifyViaBackend(imageData: string): Promise<ObjectScanResult |
   }
 }
 
+// Barcode formats worth checking on a still photo (product/UPC codes, not location stickers)
+const barcodeHints = new Map();
+barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
+  BarcodeFormat.UPC_A,
+  BarcodeFormat.UPC_E,
+  BarcodeFormat.EAN_13,
+  BarcodeFormat.EAN_8,
+  BarcodeFormat.CODE_128,
+]);
+const barcodeReader = new BrowserMultiFormatReader(barcodeHints);
+
+// Look for a UPC/EAN barcode in the captured still photo so items can be identified
+// by the printed barcode, not only by the picture of the item itself
+async function detectBarcode(imageData: string): Promise<string | null> {
+  try {
+    const result = await barcodeReader.decodeFromImageUrl(imageData);
+    return result.getText();
+  } catch (err) {
+    if (!(err instanceof NotFoundException)) {
+      console.warn('Barcode detection error:', err);
+    }
+    return null;
+  }
+}
+
+// Look up a scanned barcode against a free public product database
+async function lookupBarcodeName(barcode: string): Promise<{ name: string; category: ItemCategory } | null> {
+  try {
+    const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    const data = await response.json();
+    const productName: string | undefined = data?.product?.product_name || data?.product?.generic_name;
+
+    if (data?.status !== 1 || !productName) {
+      return null;
+    }
+
+    const lowerName = productName.toLowerCase();
+    const match = MEDICAL_SUPPLY_PATTERNS.find(p =>
+      p.keywords.some(k => lowerName.includes(k)) || lowerName.includes(p.name.toLowerCase())
+    );
+
+    return { name: productName, category: match?.category ?? 'other' };
+  } catch (err) {
+    console.warn('Barcode product lookup failed:', err);
+    return null;
+  }
+}
+
 export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const motionCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -103,6 +155,8 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [identificationFailed, setIdentificationFailed] = useState(false);
+  const [pendingResult, setPendingResult] = useState<ObjectScanResult | null>(null);
+  const [isHolding, setIsHolding] = useState(false);
 
   const startCamera = useCallback(async () => {
     setIsInitializing(true);
@@ -168,6 +222,8 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
           setCapturedImage(null);
           setIsAnalyzing(false);
           setIdentificationFailed(false);
+          setPendingResult(null);
+          setIsHolding(false);
       }
       return () => stopCamera();
   }, [isOpen, startCamera, stopCamera]);
@@ -197,6 +253,10 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
 
   const analyzeImage = useCallback(async (imageData: string) => {
     // setIsAnalyzing(true); // Already set in captureImage
+
+    // Check for a UPC/EAN barcode on the packaging first (fast, local, no network round-trip)
+    const barcode = await detectBarcode(imageData);
+
     let result: ObjectScanResult | null = await identifyViaBackend(imageData);
 
     // Fallback to local OCR (Tesseract) if the backend couldn't identify it
@@ -240,6 +300,23 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
          }
     }
 
+    // If a barcode was found but the image/OCR pass didn't produce a name, try a UPC lookup
+    if (barcode && (!result || !result.name)) {
+      const productMatch = await lookupBarcodeName(barcode);
+      if (productMatch) {
+        result = {
+          name: productMatch.name,
+          category: productMatch.category,
+          confidence: 0.75,
+          image: imageData,
+        };
+      }
+    }
+
+    if (barcode && result) {
+      result = { ...result, barcode };
+    }
+
     if (!result) {
       setIsAnalyzing(false);
       setIdentificationFailed(true);
@@ -249,8 +326,9 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     if ('vibrate' in navigator) navigator.vibrate(100);
 
     setIsAnalyzing(false);
-    onIdentify(result);
-  }, [onIdentify]);
+    // Hold for the user to confirm this is the right item before finalizing
+    setPendingResult(result);
+  }, []);
 
   const captureImage = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -258,6 +336,8 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     // Set loading state explicitly before processing to avoid UI stall feeling
     setIsAnalyzing(true);
     setIdentificationFailed(false);
+    setPendingResult(null);
+    setIsHolding(false);
 
     // Small delay to allow React to render the loading state before synchronous canvas work
     setTimeout(() => {
@@ -309,17 +389,71 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     }, 50);
   }, [analyzeImage]);
 
-  // Auto-capture when camera is ready
+  // Auto-capture once the phone stops moving, instead of on a fixed timer.
+  // Samples the video onto a tiny hidden canvas a few times a second and compares
+  // frames; once several samples in a row are nearly identical, the device is
+  // considered "still" and we take the photo. A max-wait fallback guarantees a
+  // capture still happens even if the frame never fully settles.
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    if (isOpen && !isInitializing && !capturedImage && !isAnalyzing && !error) {
-      // Wait 1.5 seconds and capture automatically
-      timeoutId = setTimeout(() => {
-         captureImage();
-      }, 1500);
+    if (!isOpen || isInitializing || capturedImage || isAnalyzing || error) {
+      setIsHolding(false);
+      return;
     }
+
+    const STILL_THRESHOLD = 6; // average per-pixel diff (0-255) below this counts as "still"
+    const STILL_SAMPLES_REQUIRED = 4; // consecutive still samples before capturing
+    const SAMPLE_INTERVAL_MS = 150;
+    const MAX_WAIT_MS = 4000;
+
+    let lastFrame: Uint8ClampedArray | null = null;
+    let stillCount = 0;
+    let cancelled = false;
+
+    const sampleCanvas = motionCanvasRef.current;
+    const ctx = sampleCanvas?.getContext('2d', { willReadFrequently: true });
+
+    const maxWaitTimer = setTimeout(() => {
+      if (!cancelled) captureImage();
+    }, MAX_WAIT_MS);
+
+    const intervalId = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || !sampleCanvas || !ctx || video.readyState < 2) return;
+
+      ctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+      const frame = ctx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+
+      if (lastFrame) {
+        let diffTotal = 0;
+        for (let i = 0; i < frame.length; i += 4) {
+          diffTotal += Math.abs(frame[i] - lastFrame[i]);
+        }
+        const avgDiff = diffTotal / (frame.length / 4);
+
+        if (avgDiff < STILL_THRESHOLD) {
+          stillCount += 1;
+          setIsHolding(true);
+        } else {
+          stillCount = 0;
+          setIsHolding(false);
+        }
+
+        if (stillCount >= STILL_SAMPLES_REQUIRED) {
+          cancelled = true;
+          clearTimeout(maxWaitTimer);
+          clearInterval(intervalId);
+          captureImage();
+          return;
+        }
+      }
+
+      lastFrame = frame;
+    }, SAMPLE_INTERVAL_MS);
+
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
+      cancelled = true;
+      clearTimeout(maxWaitTimer);
+      clearInterval(intervalId);
     };
   }, [isOpen, isInitializing, capturedImage, isAnalyzing, error, captureImage]);
 
@@ -327,7 +461,16 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     setCapturedImage(null);
     setIsAnalyzing(false);
     setIdentificationFailed(false);
+    setPendingResult(null);
+    setIsHolding(false);
     // Video playback resumption is handled by the new useEffect
+  };
+
+  // User confirmed the identified item is correct — hand the result back to the caller
+  const confirmIdentification = () => {
+    if (pendingResult) {
+      onIdentify(pendingResult);
+    }
   };
 
    return (
@@ -388,6 +531,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                 )}
                 
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
+                <canvas ref={motionCanvasRef} width={32} height={24} style={{ display: 'none' }} />
 
                 {/* Viewfinder / Guidance */}
                 {!capturedImage && !isInitializing && (
@@ -398,8 +542,10 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                         transform: 'translate(-50%, -50%)',
                         width: '80%',
                         height: '60%',
-                        border: '2px solid rgba(255,255,255,0.7)',
+                        border: '2px solid',
+                        borderColor: isHolding ? 'success.main' : 'rgba(255,255,255,0.7)',
                         borderRadius: 3,
+                        transition: 'border-color 0.2s ease',
                     }}>
                         {/* Crosshair */}
                         <Box sx={{ position: 'absolute', top: '50%', left: '50%', width: 8, height: 8, bgcolor: 'secondary.main', transform: 'translate(-50%, -50%)', borderRadius: '50%' }} />
@@ -445,6 +591,28 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                         </Stack>
                     </Box>
                 )}
+
+                {/* Confirm the identified item before handing it back to the form */}
+                {pendingResult && !isAnalyzing && (
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.6)', p: 3 }}>
+                        <Stack spacing={2} sx={{ width: '100%', maxWidth: 400, bgcolor: 'background.paper', borderRadius: 3, p: 3, mb: 2 }}>
+                            <Typography variant="overline" color="text.secondary">Is this correct?</Typography>
+                            <Typography variant="h6" fontWeight={700}>{pendingResult.name || 'Unnamed item'}</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                {pendingResult.category} • {Math.round(pendingResult.confidence * 100)}% confidence
+                                {pendingResult.barcode ? ` • Barcode ${pendingResult.barcode}` : ''}
+                            </Typography>
+                            <Stack direction="row" spacing={1.5}>
+                                <Button variant="outlined" color="inherit" startIcon={<RefreshCw />} onClick={retakePhoto} fullWidth>
+                                    No, Retake
+                                </Button>
+                                <Button variant="contained" color="success" startIcon={<Check />} onClick={confirmIdentification} fullWidth>
+                                    Yes, That's It
+                                </Button>
+                            </Stack>
+                        </Stack>
+                    </Box>
+                )}
             </Box>
 
             {/* Footer / Controls */}
@@ -467,7 +635,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                     >
                         Capture & Identify
                     </Button>
-                ) : (capturedImage && !isAnalyzing) ? (
+                ) : (capturedImage && !isAnalyzing && !pendingResult && !identificationFailed) ? (
                     <Button 
                         onClick={retakePhoto} 
                         variant="outlined" 
@@ -487,7 +655,13 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                 ) : null}
                 
                 <Typography variant="caption" sx={{ color: 'white', opacity: 0.7 }}>
-                  {capturedImage ? 'Analyzing the captured image...' : 'Point camera at the medical supply item'}
+                  {pendingResult
+                    ? 'Confirm the item above'
+                    : capturedImage
+                    ? 'Analyzing the captured image...'
+                    : isHolding
+                    ? 'Hold still… capturing'
+                    : 'Point camera at the medical supply item and hold steady'}
                 </Typography>
                 
                 <Button 

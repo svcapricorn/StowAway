@@ -157,6 +157,7 @@ export function ItemForm({
         ...prev,
         name: identifiedObject.name,
         category: identifiedObject.category,
+        barcode: identifiedObject.barcode || prev.barcode,
         photos: identifiedObject.image ? [identifiedObject.image, ...prev.photos].slice(0, 20) : prev.photos,
       }));
       toast({
