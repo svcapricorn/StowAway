@@ -49,5 +49,28 @@ export default function AuthCallbackPage() {
     );
   }
 
-  return <Navigate to={isAuthenticated ? '/' : '/login'} replace />;
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  // Supabase sent us here, but there's no session and no error param came through.
+  // This usually means the link expired/was already used, or the redirect URL isn't
+  // in the Supabase Auth "Redirect URLs" allow list — bouncing straight to /login
+  // silently makes that look like a broken link, so surface it instead.
+  return (
+    <Box sx={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+      <Alert
+        severity="warning"
+        action={
+          <Button color="inherit" size="small" onClick={() => navigate('/login', { replace: true })}>
+            Back to Sign In
+          </Button>
+        }
+      >
+        <AlertTitle>Couldn't Complete Sign-In</AlertTitle>
+        This link didn't sign you in. It may have expired or already been used — request a new
+        confirmation email or magic link and try again.
+      </Alert>
+    </Box>
+  );
 }

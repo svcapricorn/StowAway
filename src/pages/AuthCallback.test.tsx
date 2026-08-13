@@ -59,11 +59,11 @@ describe('AuthCallbackPage', () => {
     expect(screen.getByText('DASHBOARD')).toBeInTheDocument();
   });
 
-  it('redirects to login when not authenticated and no error is present', () => {
+  it('shows a friendly message instead of silently bouncing to login when no session or error is present', () => {
     useAuthMock.mockReturnValue({ isAuthenticated: false, loading: false });
 
     renderCallback('/auth/callback');
 
-    expect(screen.getByText('LOGIN PAGE')).toBeInTheDocument();
+    expect(screen.getByText("Couldn't Complete Sign-In")).toBeInTheDocument();
   });
 });
