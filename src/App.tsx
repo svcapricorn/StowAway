@@ -1,44 +1,56 @@
+import { Suspense, lazy } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ThemeProvider, CssBaseline } from "@mui/material";
+import { ThemeProvider, CssBaseline, Box, CircularProgress } from "@mui/material";
 import theme from "./theme";
 import { AuthProvider } from "@/context/AuthContext";
 import { InventoryProvider } from "@/context/InventoryContext";
 import { AppShell } from "@/components/layout/AppShell";
-import Dashboard from "@/pages/Dashboard";
-import InventoryPage from "@/pages/Inventory";
-import AddItemPage from "@/pages/AddItem";
-import ItemDetailPage from "@/pages/ItemDetail";
-import SettingsPage from "@/pages/Settings";
-import TemplatesPage from "@/pages/Templates";
-import GenerateLabelPage from "@/pages/GenerateLabel";
-import LoginPage from "@/pages/Login";
-import AuthCallbackPage from "@/pages/AuthCallback";
-import NotFound from "./pages/NotFound";
 import { Toaster } from "@/components/ui/toaster"; // Keeping for smooth transition
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
+// Lazy-load routes so heavy per-page dependencies (tesseract.js, exceljs, jspdf, zxing)
+// aren't bundled into the initial download needed just to render the login screen.
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const InventoryPage = lazy(() => import("@/pages/Inventory"));
+const AddItemPage = lazy(() => import("@/pages/AddItem"));
+const ItemDetailPage = lazy(() => import("@/pages/ItemDetail"));
+const SettingsPage = lazy(() => import("@/pages/Settings"));
+const TemplatesPage = lazy(() => import("@/pages/Templates"));
+const GenerateLabelPage = lazy(() => import("@/pages/GenerateLabel"));
+const LoginPage = lazy(() => import("@/pages/Login"));
+const AuthCallbackPage = lazy(() => import("@/pages/AuthCallback"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
 const queryClient = new QueryClient();
 
+const RouteFallback = () => (
+  <Box sx={{ display: 'flex', minHeight: '60vh', alignItems: 'center', justifyContent: 'center' }}>
+    <CircularProgress />
+  </Box>
+);
+
 const AppRoutes = () => (
-  <Routes>
-    <Route path="/login" element={<LoginPage />} />
-    <Route path="/auth/callback" element={<AuthCallbackPage />} />
-    <Route element={<ProtectedRoute />}>
-      <Route element={<AppShell />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/inventory/:id" element={<ItemDetailPage />} />
-        <Route path="/add" element={<AddItemPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/labels" element={<GenerateLabelPage />} />
-        <Route path="/templates" element={<TemplatesPage />} />
+  <Suspense fallback={<RouteFallback />}>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/inventory/:id" element={<ItemDetailPage />} />
+          <Route path="/add" element={<AddItemPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/labels" element={<GenerateLabelPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+        </Route>
       </Route>
-    </Route>
-    <Route path="*" element={<NotFound />} />
-  </Routes>
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  </Suspense>
 );
 
 const App = () => (

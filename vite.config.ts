@@ -46,7 +46,10 @@ export default defineConfig(({ mode }) => ({
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           ui: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled', 'lucide-react'],
-          utils: ['exceljs', 'framer-motion', 'date-fns']
+          // exceljs deliberately excluded: it's only needed by the Excel import
+          // dialog and would otherwise force every page to download it since
+          // framer-motion/date-fns are used almost everywhere.
+          utils: ['framer-motion', 'date-fns']
         }
       }
     }

@@ -1,10 +1,9 @@
 // StowAway Tracker - Inventory Page
 // Full inventory list with filtering
 
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { InventoryList } from '@/components/inventory/InventoryList';
-import { ExcelImportDialog } from '@/components/inventory/ExcelImportDialog';
 import { QuickAddDialog } from '@/components/inventory/QuickAddDialog';
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner';
 import { Box, Typography, Button, Stack } from '@mui/material';
@@ -13,6 +12,11 @@ import { useInventory } from '@/context/InventoryContext';
 import { InventoryItem, LOCATION_INFO } from '@/types';
 import { parseLocationBarcode } from '@/services/barcode';
 import { toast } from '@/hooks/use-toast';
+
+// exceljs is heavy and only needed once the import dialog is actually opened
+const ExcelImportDialog = lazy(() =>
+  import('@/components/inventory/ExcelImportDialog').then(m => ({ default: m.ExcelImportDialog }))
+);
 
 export default function InventoryPage() {
   const [, setSearchParams] = useSearchParams();
@@ -85,10 +89,14 @@ export default function InventoryPage() {
 
       <InventoryList />
 
-      <ExcelImportDialog 
-        open={isImportOpen} 
-        onClose={() => setIsImportOpen(false)} 
-      />
+      {isImportOpen && (
+        <Suspense fallback={null}>
+          <ExcelImportDialog
+            open={isImportOpen}
+            onClose={() => setIsImportOpen(false)}
+          />
+        </Suspense>
+      )}
       
       <BarcodeScanner 
         isOpen={isScannerOpen} 
