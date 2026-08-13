@@ -15,6 +15,10 @@ coverage
 *.local
 .env
 
+# schema.local.prisma (SQLite) migration history is per-developer and locked to
+# the "sqlite" provider — it must never be committed alongside the production
+# postgresql schema.prisma, which shares this same prisma/ folder.
+server/prisma/migrations/
 
 # Editor directories and files
 .vscode/*
