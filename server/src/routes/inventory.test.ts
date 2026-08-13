@@ -151,9 +151,9 @@ describe('inventory routes', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /vision/identify returns 503 when OPENAI_API_KEY is not configured', async () => {
-    const originalKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+  it('POST /vision/identify returns 503 when ANTHROPIC_API_KEY is not configured', async () => {
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
 
     const app = buildApp();
     const res = await request(app)
@@ -163,7 +163,7 @@ describe('inventory routes', () => {
 
     expect(res.status).toBe(503);
 
-    if (originalKey) process.env.OPENAI_API_KEY = originalKey;
+    if (originalKey) process.env.ANTHROPIC_API_KEY = originalKey;
   });
 
   it('GET / returns 500 when the database call fails', async () => {
@@ -211,28 +211,28 @@ describe('inventory routes', () => {
     expect(res.status).toBe(500);
   });
 
-  describe('POST /vision/identify with OPENAI_API_KEY configured', () => {
+  describe('POST /vision/identify with ANTHROPIC_API_KEY configured', () => {
     const originalFetch = global.fetch;
-    const originalKey = process.env.OPENAI_API_KEY;
+    const originalKey = process.env.ANTHROPIC_API_KEY;
 
     beforeEach(() => {
-      process.env.OPENAI_API_KEY = 'sk-test-key';
+      process.env.ANTHROPIC_API_KEY = 'sk-ant-test-key';
     });
 
     afterEach(() => {
       global.fetch = originalFetch;
       if (originalKey) {
-        process.env.OPENAI_API_KEY = originalKey;
+        process.env.ANTHROPIC_API_KEY = originalKey;
       } else {
-        delete process.env.OPENAI_API_KEY;
+        delete process.env.ANTHROPIC_API_KEY;
       }
     });
 
-    it('returns the identified item on a successful OpenAI response', async () => {
+    it('returns the identified item on a successful Claude response', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          choices: [{ message: { content: '{"name":"Aspirin","category":"medications","confidence":0.9}' } }],
+          content: [{ type: 'text', text: '{"name":"Aspirin","category":"medications","confidence":0.9}' }],
         }),
       }) as any;
 
@@ -246,7 +246,7 @@ describe('inventory routes', () => {
       expect(res.body).toEqual({ name: 'Aspirin', category: 'medications', confidence: 0.9 });
     });
 
-    it('returns 502 when OpenAI responds with a non-OK status', async () => {
+    it('returns 502 when Claude responds with a non-OK status', async () => {
       global.fetch = vi.fn().mockResolvedValue({ ok: false }) as any;
 
       const app = buildApp();
@@ -261,7 +261,7 @@ describe('inventory routes', () => {
     it('returns 502 when the model response is not valid JSON', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ choices: [{ message: { content: 'not json at all' } }] }),
+        json: async () => ({ content: [{ type: 'text', text: 'not json at all' }] }),
       }) as any;
 
       const app = buildApp();
@@ -276,7 +276,7 @@ describe('inventory routes', () => {
     it('returns 502 when the model response is missing required fields', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ choices: [{ message: { content: '{"confidence":0.5}' } }] }),
+        json: async () => ({ content: [{ type: 'text', text: '{"confidence":0.5}' }] }),
       }) as any;
 
       const app = buildApp();

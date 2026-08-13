@@ -14,16 +14,18 @@ router.get('/ping', (req, res) => {
   res.json({ status: 'ok', userId });
 });
 
-// Identify a photographed item via OpenAI vision, keeping the API key server-side only
+// Identify a photographed item via Claude vision, keeping the API key server-side only
 router.post('/vision/identify', async (req: Request, res: Response) => {
   const { imageData } = req.body as { imageData?: string };
 
-  if (!imageData || typeof imageData !== 'string' || !imageData.startsWith('data:image')) {
+  const imageMatch = imageData?.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!imageMatch) {
     res.status(400).json({ error: 'imageData must be a base64 image data URL' });
     return;
   }
+  const [, mediaType, base64Data] = imageMatch;
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     res.status(503).json({ error: 'Vision identification is not configured on the server' });
     return;
@@ -33,33 +35,31 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
       },
       signal: controller.signal,
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 300,
+        system:
+          "You are a medical inventory assistant. Identify the medical supply item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging. Prioritize text found on the label (Brand, Chemical Name, Dosage) to determine the item 'name'. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, diagnostic, ppe, other), and 'confidence' (number 0-1).",
         messages: [
-          {
-            role: 'system',
-            content:
-              "You are a medical inventory assistant. Identify the medical supply item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging. Prioritize text found on the label (Brand, Chemical Name, Dosage) to determine the item 'name'. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, diagnostic, ppe, other), and 'confidence' (number 0-1).",
-          },
           {
             role: 'user',
             content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
               {
                 type: 'text',
                 text: 'Identify this medical item. Read all visible text on the packaging, bottle, or box to determine exactly what it is. Include dosage or specific type if visible.',
               },
-              { type: 'image_url', image_url: { url: imageData } },
             ],
           },
         ],
-        max_tokens: 300,
       }),
     });
 
@@ -68,8 +68,8 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
       return;
     }
 
-    const data = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content;
+    const data = await response.json() as { content?: { type: string; text?: string }[] };
+    const content = data.content?.find(block => block.type === 'text')?.text;
 
     if (!content) {
       res.status(502).json({ error: 'Vision provider returned no content' });

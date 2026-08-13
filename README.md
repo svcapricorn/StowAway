@@ -25,7 +25,7 @@ npm install
 # SUPABASE_URL=https://your-project-ref.supabase.co
 # SUPABASE_JWT_AUDIENCE=authenticated
 # DATABASE_URL=your_database_connection_string
-# OPENAI_API_KEY=your_openai_api_key
+# ANTHROPIC_API_KEY=your_anthropic_api_key
 
 # Step 4: Start the development server
 npm run dev
@@ -101,7 +101,7 @@ SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_JWT_AUDIENCE=authenticated
 DATABASE_URL=postgresql://postgres:your_db_password@db.your-project-ref.supabase.co:6543/postgres?sslmode=require
 PORT=3001
-OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 EOF
 
 sudo chown root:ubuntu /etc/stowaway.env
