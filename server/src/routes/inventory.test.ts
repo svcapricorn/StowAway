@@ -247,7 +247,7 @@ describe('inventory routes', () => {
     });
 
     it('returns 502 when Claude responds with a non-OK status', async () => {
-      global.fetch = vi.fn().mockResolvedValue({ ok: false }) as any;
+      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'invalid api key' }) as any;
 
       const app = buildApp();
       const res = await request(app)

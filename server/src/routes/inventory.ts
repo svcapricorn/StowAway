@@ -64,6 +64,8 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
     });
 
     if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      console.error(`Vision provider returned ${response.status}: ${errorBody}`);
       res.status(502).json({ error: 'Vision provider returned an error' });
       return;
     }
