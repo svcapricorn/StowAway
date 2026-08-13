@@ -11,10 +11,14 @@ vi.mock('@/context/InventoryContext', () => ({
 vi.mock('@/hooks/use-toast', () => ({ toast: vi.fn() }));
 
 let capturedOnScan: ((code: string) => void) | undefined;
+let capturedOnConfirmAdd: ((id: string, amount: number) => Promise<void>) | undefined;
 vi.mock('@/components/inventory/InventoryList', () => ({ InventoryList: () => <div>INVENTORY LIST</div> }));
 vi.mock('@/components/inventory/ExcelImportDialog', () => ({ ExcelImportDialog: () => null }));
 vi.mock('@/components/inventory/QuickAddDialog', () => ({
-  QuickAddDialog: ({ open, item }: any) => (open ? <div>QUICK ADD: {item?.name}</div> : null),
+  QuickAddDialog: ({ open, item, onConfirmAdd }: any) => {
+    capturedOnConfirmAdd = onConfirmAdd;
+    return open ? <div>QUICK ADD: {item?.name}</div> : null;
+  },
 }));
 vi.mock('@/components/scanner/BarcodeScanner', () => ({
   BarcodeScanner: ({ onScan }: any) => {
@@ -67,5 +71,23 @@ describe('InventoryPage', () => {
     capturedOnScan?.('unknown-code');
 
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Unknown barcode' }));
+  });
+
+  it('confirms a quick-add stock update and shows a success toast', async () => {
+    const updateItem = vi.fn().mockResolvedValue(undefined);
+    useInventoryMock.mockReturnValue({
+      items: [{ id: '1', name: 'Bandages', barcode: '049000028911', quantity: 5 }],
+      updateItem,
+    });
+
+    renderInventoryPage();
+    await userEvent.click(screen.getByRole('button', { name: /scan location/i }));
+    capturedOnScan?.('049000028911');
+    await screen.findByText('QUICK ADD: Bandages');
+
+    await capturedOnConfirmAdd?.('1', 3);
+
+    expect(updateItem).toHaveBeenCalledWith('1', { quantity: 8 });
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Stock Updated' }));
   });
 });

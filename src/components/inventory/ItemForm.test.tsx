@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ItemForm } from './ItemForm';
@@ -18,7 +18,8 @@ vi.mock('@/context/InventoryContext', () => ({
   useInventory: () => ({ addItem, updateItem, deleteItem }),
 }));
 
-vi.mock('@/hooks/use-toast', () => ({ toast: vi.fn() }));
+const toastMock = vi.fn();
+vi.mock('@/hooks/use-toast', () => ({ toast: (...args: unknown[]) => toastMock(...args) }));
 
 function renderForm(props: Partial<React.ComponentProps<typeof ItemForm>> = {}) {
   return render(
@@ -27,6 +28,17 @@ function renderForm(props: Partial<React.ComponentProps<typeof ItemForm>> = {}) 
     </MemoryRouter>,
   );
 }
+
+const existingItem = {
+  id: '1',
+  name: 'Bandages',
+  category: 'first-aid',
+  quantity: 5,
+  minQuantity: 1,
+  location: 'galley',
+  createdAt: '',
+  updatedAt: '',
+} as any;
 
 describe('ItemForm', () => {
   beforeEach(() => {
@@ -122,5 +134,176 @@ describe('ItemForm', () => {
 
     await waitFor(() => expect(deleteItem).toHaveBeenCalledWith('1'));
     expect(navigateMock).toHaveBeenCalledWith('/inventory');
+  });
+
+  it('cancels the delete dialog without deleting', async () => {
+    renderForm({ existingItem });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /remove item/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /^cancel$/i }));
+
+    await waitFor(() => expect(screen.queryByText('Remove this item?')).not.toBeInTheDocument());
+    expect(deleteItem).not.toHaveBeenCalled();
+  });
+
+  it('shows a validation error for a negative quantity and does not submit', async () => {
+    renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/label name/i), 'Aspirin');
+    const quantityInput = screen.getByLabelText(/^quantity$/i);
+    await user.clear(quantityInput);
+    await user.type(quantityInput, '-1');
+    await user.click(screen.getByRole('button', { name: /add item/i }));
+
+    expect(await screen.findByText('Quantity must be 0 or more')).toBeInTheDocument();
+    expect(addItem).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast and stops submitting when addItem fails', async () => {
+    addItem.mockRejectedValueOnce(new Error('network down'));
+    renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/label name/i), 'Gauze Pads');
+    await user.click(screen.getByRole('button', { name: /add item/i }));
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Error', variant: 'destructive' }),
+      ),
+    );
+    expect(navigateMock).not.toHaveBeenCalledWith('/inventory');
+  });
+
+  it('shows an error toast when deleteItem fails', async () => {
+    deleteItem.mockRejectedValueOnce(new Error('network down'));
+    renderForm({ existingItem });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /remove item/i }));
+    await user.click(screen.getByRole('button', { name: /^remove$/i }));
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Error', variant: 'destructive' }),
+      ),
+    );
+  });
+
+  it('navigates back when Cancel is clicked', async () => {
+    renderForm();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith(-1);
+  });
+
+  it('fires the scan request callbacks', async () => {
+    const onScanLocationRequest = vi.fn();
+    const onScanObjectRequest = vi.fn();
+    const onScanProductBarcodeRequest = vi.fn();
+    renderForm({ onScanLocationRequest, onScanObjectRequest, onScanProductBarcodeRequest });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /scan location/i }));
+    await user.click(screen.getByRole('button', { name: /identify item/i }));
+    await user.click(screen.getByRole('button', { name: /scan retail product barcode/i }));
+
+    expect(onScanLocationRequest).toHaveBeenCalledTimes(1);
+    expect(onScanObjectRequest).toHaveBeenCalledTimes(1);
+    expect(onScanProductBarcodeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('populates the form and shows a toast when an object is identified', () => {
+    renderForm({
+      identifiedObject: {
+        name: 'Ibuprofen 200mg',
+        category: 'medications',
+        confidence: 0.92,
+        image: 'data:image/jpeg;base64,fake',
+        barcode: '012345678905',
+      },
+    });
+
+    expect(screen.getByLabelText(/label name/i)).toHaveValue('Ibuprofen 200mg');
+    expect(screen.getByText(/product barcode: 012345678905/i)).toBeInTheDocument();
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Item identified' }),
+    );
+  });
+
+  describe('scanned barcode product lookup', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('fills in the product name when OpenFoodFacts finds a match', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        json: () => Promise.resolve({ status: 1, product: { product_name: 'Ibuprofen Tablets' } }),
+      }) as any;
+
+      renderForm({ scannedBarcode: '012345678905' });
+
+      expect(await screen.findByLabelText(/label name/i)).toHaveValue('Ibuprofen Tablets');
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Product Found' }));
+    });
+
+    it('shows a toast when the barcode is recognized but has no product name', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        json: () => Promise.resolve({ status: 1, product: {} }),
+      }) as any;
+
+      renderForm({ scannedBarcode: '012345678905' });
+
+      await waitFor(() =>
+        expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'No product details found' })),
+      );
+    });
+
+    it('shows a toast when the barcode is not found', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        json: () => Promise.resolve({ status: 0 }),
+      }) as any;
+
+      renderForm({ scannedBarcode: '000000000000' });
+
+      await waitFor(() =>
+        expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Product not found' })),
+      );
+    });
+
+    it('shows a destructive toast when the lookup request fails', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error('offline')) as any;
+
+      renderForm({ scannedBarcode: '012345678905' });
+
+      await waitFor(() =>
+        expect(toastMock).toHaveBeenCalledWith(
+          expect.objectContaining({ title: 'Lookup failed', variant: 'destructive' }),
+        ),
+      );
+    });
+  });
+
+  it('adds and removes a photo', async () => {
+    renderForm();
+    const user = userEvent.setup();
+
+    const file = new File(['fake-image-bytes'], 'item.png', { type: 'image/png' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, file);
+
+    await waitFor(() => expect(screen.getByAltText('Item 1')).toBeInTheDocument());
+
+    const removeButton = screen.getByAltText('Item 1').parentElement?.querySelector('button');
+    await user.click(removeButton!);
+
+    expect(screen.queryByAltText('Item 1')).not.toBeInTheDocument();
   });
 });

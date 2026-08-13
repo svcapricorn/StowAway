@@ -400,6 +400,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
       return;
     }
 
+    const SETTLE_MS = 1500; // give the user time to bring the item into frame before watching for stillness
     const STILL_THRESHOLD = 6; // average per-pixel diff (0-255) below this counts as "still"
     const STILL_SAMPLES_REQUIRED = 4; // consecutive still samples before capturing
     const SAMPLE_INTERVAL_MS = 150;
@@ -408,52 +409,59 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     let lastFrame: Uint8ClampedArray | null = null;
     let stillCount = 0;
     let cancelled = false;
+    let maxWaitTimer: ReturnType<typeof setTimeout> | undefined;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
 
     const sampleCanvas = motionCanvasRef.current;
     const ctx = sampleCanvas?.getContext('2d', { willReadFrequently: true });
 
-    const maxWaitTimer = setTimeout(() => {
-      if (!cancelled) captureImage();
-    }, MAX_WAIT_MS);
+    const settleTimer = setTimeout(() => {
+      if (cancelled) return;
 
-    const intervalId = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || !sampleCanvas || !ctx || video.readyState < 2) return;
+      maxWaitTimer = setTimeout(() => {
+        if (!cancelled) captureImage();
+      }, MAX_WAIT_MS);
 
-      ctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
-      const frame = ctx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+      intervalId = setInterval(() => {
+        const video = videoRef.current;
+        if (!video || !sampleCanvas || !ctx || video.readyState < 2) return;
 
-      if (lastFrame) {
-        let diffTotal = 0;
-        for (let i = 0; i < frame.length; i += 4) {
-          diffTotal += Math.abs(frame[i] - lastFrame[i]);
+        ctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+        const frame = ctx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+
+        if (lastFrame) {
+          let diffTotal = 0;
+          for (let i = 0; i < frame.length; i += 4) {
+            diffTotal += Math.abs(frame[i] - lastFrame[i]);
+          }
+          const avgDiff = diffTotal / (frame.length / 4);
+
+          if (avgDiff < STILL_THRESHOLD) {
+            stillCount += 1;
+            setIsHolding(true);
+          } else {
+            stillCount = 0;
+            setIsHolding(false);
+          }
+
+          if (stillCount >= STILL_SAMPLES_REQUIRED) {
+            cancelled = true;
+            clearTimeout(maxWaitTimer);
+            clearInterval(intervalId);
+            captureImage();
+            return;
+          }
         }
-        const avgDiff = diffTotal / (frame.length / 4);
 
-        if (avgDiff < STILL_THRESHOLD) {
-          stillCount += 1;
-          setIsHolding(true);
-        } else {
-          stillCount = 0;
-          setIsHolding(false);
-        }
-
-        if (stillCount >= STILL_SAMPLES_REQUIRED) {
-          cancelled = true;
-          clearTimeout(maxWaitTimer);
-          clearInterval(intervalId);
-          captureImage();
-          return;
-        }
-      }
-
-      lastFrame = frame;
-    }, SAMPLE_INTERVAL_MS);
+        lastFrame = frame;
+      }, SAMPLE_INTERVAL_MS);
+    }, SETTLE_MS);
 
     return () => {
       cancelled = true;
-      clearTimeout(maxWaitTimer);
-      clearInterval(intervalId);
+      clearTimeout(settleTimer);
+      if (maxWaitTimer) clearTimeout(maxWaitTimer);
+      if (intervalId) clearInterval(intervalId);
     };
   }, [isOpen, isInitializing, capturedImage, isAnalyzing, error, captureImage]);
 
