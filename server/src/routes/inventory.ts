@@ -32,7 +32,9 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  // Vision requests take longer than typical API calls; 15s was too tight and
+  // caused intermittent silent fallbacks to the weaker on-device OCR.
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -46,8 +48,9 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 300,
+        temperature: 0.1,
         system:
-          "You are a medical inventory assistant. Identify the medical supply item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging. Prioritize text found on the label (Brand, Chemical Name, Dosage) to determine the item 'name'. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, diagnostic, ppe, other), and 'confidence' (number 0-1).",
+          "You are a vessel inventory assistant. Identify the item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging or object itself. Prioritize text found on the label (Brand, Product Name, Size/Strength) to determine the item 'name'. Items can be anything stored aboard a boat, not just medical supplies. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, emergency, hygiene, diagnostic, ppe, other), and 'confidence' (number 0-1).",
         messages: [
           {
             role: 'user',
@@ -55,7 +58,7 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
               { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
               {
                 type: 'text',
-                text: 'Identify this medical item. Read all visible text on the packaging, bottle, or box to determine exactly what it is. Include dosage or specific type if visible.',
+                text: 'Identify this item. Read all visible text on the packaging, bottle, box, or object to determine exactly what it is. Include size, dosage, or specific type if visible. Choose the best-fitting category even if it is not a medical item.',
               },
             ],
           },
@@ -74,13 +77,31 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
     const content = data.content?.find(block => block.type === 'text')?.text;
 
     if (!content) {
+      console.error('Vision provider returned no text content:', JSON.stringify(data));
       res.status(502).json({ error: 'Vision provider returned no content' });
       return;
     }
 
-    const parsed = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());
+    // Claude sometimes wraps the JSON in prose/markdown despite instructions —
+    // extract the outermost {...} block instead of assuming the whole string is JSON.
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('Vision provider response had no JSON object:', content);
+      res.status(502).json({ error: 'Vision provider returned an unparseable result' });
+      return;
+    }
+
+    let parsed: { name?: string; category?: string; confidence?: number };
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (parseError) {
+      console.error('Vision provider response was not valid JSON:', content);
+      res.status(502).json({ error: 'Vision provider returned an unparseable result' });
+      return;
+    }
 
     if (!parsed.name || !parsed.category) {
+      console.error('Vision provider response missing required fields:', content);
       res.status(502).json({ error: 'Vision provider returned an incomplete result' });
       return;
     }

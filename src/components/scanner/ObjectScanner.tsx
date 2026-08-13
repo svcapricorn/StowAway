@@ -669,7 +669,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                     ? 'Analyzing the captured image...'
                     : isHolding
                     ? 'Hold still… capturing'
-                    : 'Point camera at the medical supply item and hold steady'}
+                    : 'Point camera at the item and hold steady'}
                 </Typography>
                 
                 <Button 
