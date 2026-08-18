@@ -65,6 +65,29 @@ npm run test:coverage # run with a coverage report
 - Backend: ~87% statement coverage (auth middleware, all CRUD routes, vision/identify endpoint, and parsing helpers are covered).
 - Frontend: ~60% statement coverage and climbing. Core data flows (inventory CRUD via `database.ts`, `AuthContext`, `InventoryContext`, dashboard/inventory pages, label printing, barcode/object scanner error handling) all have test coverage. The remaining gaps are mostly deep, hard-to-simulate camera/canvas interactions in `BarcodeScanner`/`ObjectScanner` and a few large form components.
 
+## Automated Deploy
+
+One-time setup on the Lightsail host:
+
+```sh
+sudo snap install aws-cli --classic
+aws configure                       # access key, secret, region
+cd ~/seamed-safe-haven
+cp deploy.env.example deploy.env    # fill in S3_BUCKET + CLOUDFRONT_DISTRIBUTION_ID
+```
+
+Then every deploy is one command:
+
+```sh
+npm run deploy                 # git pull + API (pm2) + frontend (S3 + CloudFront)
+npm run deploy:api             # API only
+npm run deploy:frontend        # frontend only
+```
+
+The frontend script uploads hashed assets with a one-year immutable cache, uploads `index.html` with no-cache, creates a CloudFront `/*` invalidation, and waits for it to complete. The API script builds, sources `/etc/stowaway.env`, restarts pm2, and health-checks `127.0.0.1:$PORT/health`.
+
+Note: use `npm install` (not `npm ci`) on the host — dependencies are managed with `bun.lock`, so the committed `package-lock.json` lags behind. The deploy script already does the right thing, and prefers `bun install` when bun is present.
+
 ## Production Architecture
 
 - Frontend: static build on S3 + CloudFront
