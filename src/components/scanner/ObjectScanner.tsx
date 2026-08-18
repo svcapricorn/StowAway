@@ -465,7 +465,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
           }
         }
       } catch (err) {
-        console.error('Local OCR failed:', err);
+        console.error('Label OCR failed:', err);
       }
     }
 
