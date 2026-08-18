@@ -97,6 +97,38 @@ async function identifyViaBackend(imageData: string): Promise<ObjectScanResult |
   }
 }
 
+// Read the label text with the server's managed OCR service (Google Cloud
+// Vision / AWS Textract). Server-side OCR is far more accurate on curved,
+// glossy packaging than in-browser Tesseract, and keeps the wasm bundle out of
+// the client build entirely.
+async function ocrViaBackend(imageData: string): Promise<string | null> {
+  try {
+    const headers = await getHeaders();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    const response = await fetch(`${API_URL}/vision/ocr`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({ imageData }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.warn('OCR backend returned non-200 status:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return typeof data?.text === 'string' && data.text.trim() ? data.text : null;
+  } catch (err) {
+    console.error('OCR backend request failed:', err);
+    return null;
+  }
+}
+
 // Barcode formats worth checking on a still photo (product/UPC codes, not location stickers)
 const barcodeHints = new Map();
 barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
