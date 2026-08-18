@@ -593,9 +593,10 @@ export function ExcelImportDialog({ open, onClose }: ExcelImportDialogProps) {
                          />
                        </TableCell>
                        <TableCell>
-                         <IconButton size="small" color="error" onClick={() => handleDeleteRow(row.id)}>
-                           <Trash2 size={16} />
+                         <IconButton size="small" color="error" onClick={() => handleDeleteRow(row.id)} aria-label={`Remove row for ${row.name || 'unnamed item'}`} sx={{ minWidth: 44, minHeight: 44 }}>
+                           <Trash2 size={16} aria-hidden="true" />
                          </IconButton>
+
                        </TableCell>
                      </TableRow>
                    ))}

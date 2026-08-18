@@ -299,11 +299,11 @@ describe('ItemForm', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(input, file);
 
-    await waitFor(() => expect(screen.getByAltText('Item 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByAltText('Photo 1 of this item')).toBeInTheDocument());
 
-    const removeButton = screen.getByAltText('Item 1').parentElement?.querySelector('button');
-    await user.click(removeButton!);
+    await user.click(screen.getByRole('button', { name: /remove photo 1/i }));
 
-    expect(screen.queryByAltText('Item 1')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('Photo 1 of this item')).not.toBeInTheDocument();
+
   });
 });

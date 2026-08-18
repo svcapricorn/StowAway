@@ -47,10 +47,21 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
       signal: controller.signal,
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 300,
-        temperature: 0.1,
-        system:
-          "You are a vessel inventory assistant. Identify the item in the image by READING THE TEXT LABELS (OCR) and analyzing the packaging or object itself. Prioritize text found on the label (Brand, Product Name, Size/Strength) to determine the item 'name'. Items can be anything stored aboard a boat, not just medical supplies. Return strictly valid JSON with no markdown formatting containing: 'name' (string), 'category' (one of: medications, first-aid, tools, emergency, hygiene, diagnostic, ppe, other), and 'confidence' (number 0-1).",
+        max_tokens: 600,
+        temperature: 0,
+        system: [
+          'You are a vessel inventory identification assistant.',
+          'Work in two steps.',
+          'Step 1: transcribe EVERY piece of text you can read on the item — brand, product name, active ingredient, strength/dosage, count, size, volume. Read small print carefully; do not guess characters you cannot see.',
+          'Step 2: build the item name from that transcription, in the form "Brand Product Name Strength/Size" (e.g. "Advil Ibuprofen 200mg 50ct", "Johnson & Johnson Waterproof Bandages 30ct").',
+          'Rules:',
+          '- Never invent a brand, ingredient or dosage that is not visible.',
+          '- If no text is legible, name the item by what it physically is (e.g. "Stainless steel shackle").',
+          '- Items can be anything stored aboard a boat, not only medical supplies.',
+          '- Confidence must reflect how certain the reading is: >0.85 only when the label text is clearly legible, <0.5 when you are largely guessing from shape.',
+          'Return ONLY strictly valid JSON, no markdown, no commentary, with keys:',
+          '"raw_text" (string, the text you transcribed), "name" (string), "category" (one of: medications, first-aid, tools, emergency, hygiene, diagnostic, ppe, other), "confidence" (number 0-1).',
+        ].join('\n'),
         messages: [
           {
             role: 'user',
@@ -58,13 +69,16 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
               { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
               {
                 type: 'text',
-                text: 'Identify this item. Read all visible text on the packaging, bottle, box, or object to determine exactly what it is. Include size, dosage, or specific type if visible. Choose the best-fitting category even if it is not a medical item.',
+                text: 'Identify this item. First transcribe all visible text on the packaging, bottle, box or object, then name it precisely from that text including brand, strength/dosage and size or count when visible. Choose the best-fitting category even if it is not a medical item.',
               },
             ],
           },
         ],
       }),
     });
+
+
+
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
@@ -91,7 +105,7 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
       return;
     }
 
-    let parsed: { name?: string; category?: string; confidence?: number };
+    let parsed: { name?: string; category?: string; confidence?: number; raw_text?: string };
     try {
       parsed = JSON.parse(jsonMatch[0]);
     } catch (parseError) {
@@ -106,11 +120,16 @@ router.post('/vision/identify', async (req: Request, res: Response) => {
       return;
     }
 
+    const ALLOWED_CATEGORIES = ['medications', 'first-aid', 'tools', 'emergency', 'hygiene', 'diagnostic', 'ppe', 'other'];
+    const category = ALLOWED_CATEGORIES.includes(parsed.category) ? parsed.category : 'other';
+
     res.json({
-      name: parsed.name,
-      category: parsed.category,
+      name: parsed.name.trim(),
+      category,
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.85,
+      rawText: typeof parsed.raw_text === 'string' ? parsed.raw_text : undefined,
     });
+
   } catch (error) {
     console.error('Vision identify failed:', error);
     res.status(502).json({ error: 'Vision identification failed' });

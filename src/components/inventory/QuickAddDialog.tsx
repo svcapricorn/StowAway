@@ -77,25 +77,29 @@ export function QuickAddDialog({ open, onClose, item, scannedBarcode, onConfirmA
              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, my: 4 }}>
                <IconButton 
                  onClick={handleDecrement} 
-                 sx={{ border: 1, borderColor: 'divider' }}
+                 aria-label="Decrease amount to add"
+                 sx={{ border: 1, borderColor: 'divider', minWidth: 48, minHeight: 48 }}
                >
-                 <Minus />
+                 <Minus aria-hidden="true" />
                </IconButton>
                
                <TextField 
                  value={addAmount}
                  onChange={(e) => setAddAmount(Math.max(1, parseInt(e.target.value) || 0))}
                  type="number"
-                 sx={{ width: 100, textAlign: 'center' }}
-                 inputProps={{ style: { textAlign: 'center', fontSize: '1.5rem', fontWeight: 'bold' } }}
+                 label="Amount to add"
+                 sx={{ width: 120, textAlign: 'center' }}
+                 inputProps={{ style: { textAlign: 'center', fontSize: '1.5rem', fontWeight: 'bold' }, min: 1 }}
                />
                
                <IconButton 
                  onClick={handleIncrement} 
-                 sx={{ border: 1, borderColor: 'divider', bgcolor: 'primary.light', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.main' } }}
+                 aria-label="Increase amount to add"
+                 sx={{ border: 1, borderColor: 'divider', minWidth: 48, minHeight: 48, bgcolor: 'primary.light', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.main' } }}
                >
-                 <Plus />
+                 <Plus aria-hidden="true" />
                </IconButton>
+
              </Box>
              
              <Typography variant="body2" color="text.secondary" align="center">
