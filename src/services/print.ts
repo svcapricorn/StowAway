@@ -70,7 +70,7 @@ export function exportThermal(data: LabelData): void {
   }
 
   const bytes = buildEscPosLabel(data.barcode, lines);
-  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' });
   downloadBlob(blob, `label-${data.barcode}.escpos`);
 }
 
