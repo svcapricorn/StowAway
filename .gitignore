@@ -33,3 +33,6 @@ server/prisma/migrations/
 
 *.db
 docs/SETUP.md
+
+# Deploy config (host-specific)
+deploy.env

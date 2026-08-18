@@ -14,7 +14,10 @@
     "test:coverage": "vitest run --coverage",
     "server": "cd server && npm run dev",
     "client": "npm run dev",
-    "dev:all": "npx concurrently \"npm run server\" \"npm run client\""
+    "dev:all": "npx concurrently \"npm run server\" \"npm run client\"",
+    "deploy": "bash scripts/deploy.sh",
+    "deploy:frontend": "bash scripts/deploy-frontend.sh",
+    "deploy:api": "bash scripts/deploy-api.sh"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
