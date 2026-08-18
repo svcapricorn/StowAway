@@ -1,15 +1,16 @@
 // StowAway Tracker - Dashboard Page
-// Main overview page with status and alerts
+// Hero + grid overview: kit status, key metrics, alerts and categories.
 
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, Download, FileText, Tags } from 'lucide-react';
+import { FileText, ChevronRight } from 'lucide-react';
 import { useInventory } from '@/context/InventoryContext';
-import { StatusCard } from '@/components/dashboard/StatusCard';
 import { AlertsList } from '@/components/dashboard/AlertsList';
 import { QuickStats } from '@/components/dashboard/QuickStats';
-import { Button, Stack, Typography, Box, Skeleton } from '@mui/material';
+import { DashboardHero } from '@/components/dashboard/DashboardHero';
+import { MetricGrid } from '@/components/dashboard/MetricGrid';
+import { Box, Paper, Stack, Typography, Skeleton } from '@mui/material';
 
 export default function Dashboard() {
   const { items, exportToCSV, isLoading } = useInventory();
@@ -36,102 +37,79 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <Stack spacing={2} sx={{ py: 3 }}>
-        <Skeleton variant="rectangular" height={160} sx={{ borderRadius: 2 }} />
-        <Skeleton variant="rectangular" height={48} sx={{ borderRadius: 2 }} />
-        <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
+      <Stack spacing={3} sx={{ py: 3 }}>
+        <Skeleton variant="rectangular" height={240} sx={{ borderRadius: 4 }} />
+        <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 3 }} />
+        <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 3 }} />
       </Stack>
     );
   }
 
   return (
-    <Stack spacing={3} sx={{ py: 3 }}>
-      {/* Status Overview */}
-      <StatusCard />
+    <Stack spacing={4} sx={{ py: 3 }}>
+      <DashboardHero onExport={handleExport} />
 
-      {/* Quick Actions */}
-      <Stack direction="row" spacing={2}>
-        <Button 
-          component={Link} 
-          to="/add" 
-          variant="contained" 
-          color="secondary" 
-          fullWidth
-          size="large"
-          startIcon={<Plus />}
-        >
-          Add Item
-        </Button>
-        <Button
-          component={Link}
-          to="/labels"
-          variant="outlined"
-          size="large"
-          sx={{ minWidth: 64 }}
-          title="Location labels"
-        >
-          <Tags />
-        </Button>
-        <Button
-          variant="outlined"
-          size="large"
-          onClick={handleExport}
-          disabled={items.length === 0}
-          sx={{ minWidth: 64 }}
-        >
-          <Download />
-        </Button>
-      </Stack>
+      <MetricGrid />
 
-      {/* Alerts Section */}
       <Box>
-        <Typography variant="h6" gutterBottom>Alerts</Typography>
+        <Typography variant="h6" sx={{ fontWeight: 600, mb: 1.5 }}>
+          Alerts
+        </Typography>
         <AlertsList />
       </Box>
 
-      {/* Category Stats */}
-      <Box>
-        <QuickStats />
-      </Box>
+      <QuickStats />
 
-      {/* Regulatory Templates Link */}
       {items.length > 0 && (
-        <motion.div
-           initial={{ opacity: 0, y: 20 }}
-           animate={{ opacity: 1, y: 0 }}
-           transition={{ delay: 0.3 }}
+        <Paper
+          component={motion.div}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          variant="outlined"
+          sx={{ borderRadius: 3, overflow: 'hidden' }}
         >
-          <Box 
-            component={Link} 
+          <Stack
+            component={Link}
             to="/templates"
-            sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: 2, 
-                p: 2, 
-                bgcolor: 'background.paper', 
-                borderRadius: 2, 
-                boxShadow: 1,
-                textDecoration: 'none',
-                color: 'inherit',
-                '&:hover': { boxShadow: 3, bgcolor: 'action.hover' }
+            direction="row"
+            spacing={2}
+            alignItems="center"
+            sx={{
+              p: 2.5,
+              textDecoration: 'none',
+              color: 'inherit',
+              transition: 'background-color 150ms ease',
+              '&:hover': { bgcolor: 'action.hover' },
             }}
           >
-            <Box sx={{ p: 1, bgcolor: 'action.selected', borderRadius: 1, display: 'flex' }}>
-              <FileText size={24} />
+            <Box
+              sx={{
+                display: 'flex',
+                p: 1.25,
+                borderRadius: 2,
+                color: 'secondary.main',
+                bgcolor: (theme) => `color-mix(in srgb, ${theme.palette.secondary.main} 12%, transparent)`,
+              }}
+            >
+              <FileText size={22} />
             </Box>
-            <Box>
-               <Typography variant="subtitle1" fontWeight="bold">Regulatory Templates</Typography>
-               <Typography variant="body2" color="text.secondary">Compare with USCG, RYA, and WHO guidelines</Typography>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                Regulatory Templates
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Compare your kit with USCG, RYA, and WHO guidelines
+              </Typography>
             </Box>
-          </Box>
-        </motion.div>
+            <ChevronRight size={18} style={{ opacity: 0.5, flexShrink: 0 }} />
+          </Stack>
+        </Paper>
       )}
-      
-      {/* Disclaimer */}
-      <Box sx={{ textAlign: 'center', py: 2, maxWidth: 400, mx: 'auto' }}>
+
+      <Box sx={{ textAlign: 'center', py: 1, maxWidth: 440, mx: 'auto' }}>
         <Typography variant="caption" color="text.secondary">
-          StowAway is an organizational tool only. It does not provide medical advice, 
+          StowAway is an organizational tool only. It does not provide medical advice,
           diagnosis, or treatment recommendations.
         </Typography>
       </Box>
