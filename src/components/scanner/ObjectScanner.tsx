@@ -131,10 +131,21 @@ function loadImage(src: string, timeoutMs = 1500): Promise<HTMLImageElement> {
 
 // Boost contrast and convert to grayscale, upscaled 2x — Tesseract reads printed
 // labels far more reliably on a high-contrast, larger image than on a raw photo.
+// Preprocessing is used by both the barcode retry and the OCR fallback; cache the
+// last result so a single capture is only enhanced once.
+let preprocessCache: { src: string; out: string } | null = null;
+
 async function preprocessForOcr(imageData: string): Promise<string> {
+  if (preprocessCache?.src === imageData) return preprocessCache.out;
+  const out = await runPreprocess(imageData);
+  preprocessCache = { src: imageData, out };
+  return out;
+}
+
+async function runPreprocess(imageData: string): Promise<string> {
   try {
     const img = await loadImage(imageData);
-    const scale = 2;
+
     const canvas = document.createElement('canvas');
     canvas.width = img.width * scale;
     canvas.height = img.height * scale;
