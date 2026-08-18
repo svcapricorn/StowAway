@@ -72,7 +72,7 @@ function AlertSection({ title, subtitle, icon, variant, items }: AlertSectionPro
                             <ListItem disablePadding>
                                 <ListItemButton component={Link} to={`/item/${item.id}`}>
                                     <Grid container alignItems="center" spacing={1}>
-                                      <Grid item xs>
+                                      <Grid sx={{ flex: 1, minWidth: 0 }}>
                                         <ListItemText 
                                             primary={item.name} 
                                             secondary={item.category}
@@ -80,10 +80,10 @@ function AlertSection({ title, subtitle, icon, variant, items }: AlertSectionPro
                                             secondaryTypographyProps={{ variant: 'caption' }}
                                         />
                                       </Grid>
-                                      <Grid item>
+                                      <Grid>
                                         <Typography variant="caption" color="text.secondary">{item.detail}</Typography>
                                       </Grid>
-                                      <Grid item>
+                                      <Grid>
                                         <ChevronRight size={16} style={{ opacity: 0.5 }} />
                                       </Grid>
                                     </Grid>

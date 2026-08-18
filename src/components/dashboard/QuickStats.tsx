@@ -58,7 +58,7 @@ export function QuickStats() {
 
       <Grid container spacing={2}>
         {activeCategories.map(([category, count], index) => (
-          <Grid item xs={6} key={category}>
+          <Grid size={6} key={category}>
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
