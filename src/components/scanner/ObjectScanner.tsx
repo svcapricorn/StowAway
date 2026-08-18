@@ -384,16 +384,12 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
       }
     }
 
-    // Last resort: on-device OCR against a contrast-boosted copy of the photo
+    // Last resort: server-side OCR (Google Cloud Vision / AWS Textract)
     if (!result) {
       setAnalysisStage('Reading text on the package…');
       try {
-        const ocrImage = await preprocessForOcr(imageData);
-        const worker = await createWorker('eng');
-        const ret = await worker.recognize(ocrImage);
-        await worker.terminate();
-
-        const rawText = ret.data.text;
+        const rawText = await ocrViaBackend(imageData);
+        if (!rawText) throw new Error('No text returned by OCR');
         const text = rawText.toLowerCase();
         console.log('OCR Detected Text:', text);
 
