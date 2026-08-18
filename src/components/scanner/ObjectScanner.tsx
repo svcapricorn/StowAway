@@ -109,15 +109,25 @@ barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
 barcodeHints.set(DecodeHintType.TRY_HARDER, true);
 const barcodeReader = new BrowserMultiFormatReader(barcodeHints);
 
-// Load a data URL into an <img> so it can be redrawn/preprocessed on a canvas
-function loadImage(src: string): Promise<HTMLImageElement> {
+// Load a data URL into an <img> so it can be redrawn/preprocessed on a canvas.
+// Guarded by a timeout: environments that never fire load/error events must not
+// be able to stall the whole identification pipeline.
+function loadImage(src: string, timeoutMs = 4000): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
+    const timer = setTimeout(() => reject(new Error('Image load timed out')), timeoutMs);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error('Image failed to load'));
+    };
     img.src = src;
   });
 }
+
 
 // Boost contrast and convert to grayscale, upscaled 2x — Tesseract reads printed
 // labels far more reliably on a high-contrast, larger image than on a raw photo.
