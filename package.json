@@ -16,6 +16,8 @@
     "client": "npm run dev",
     "dev:all": "npx concurrently \"npm run server\" \"npm run client\"",
     "deploy": "bash scripts/deploy.sh",
+    "deploy:sequential": "bash scripts/deploy.sh --sequential",
+    "deploy:upload": "bash scripts/deploy.sh --skip-build",
     "deploy:frontend": "bash scripts/deploy-frontend.sh",
     "deploy:api": "bash scripts/deploy-api.sh"
   },
