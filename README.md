@@ -125,6 +125,11 @@ SUPABASE_JWT_AUDIENCE=authenticated
 DATABASE_URL=postgresql://postgres:your_db_password@db.your-project-ref.supabase.co:6543/postgres?sslmode=require
 PORT=3001
 ANTHROPIC_API_KEY=your_anthropic_api_key
+# Label OCR fallback — set ONE (Google Vision preferred when both exist)
+GOOGLE_VISION_API_KEY=your_google_cloud_vision_api_key
+# AWS_ACCESS_KEY_ID=...
+# AWS_SECRET_ACCESS_KEY=...
+# AWS_REGION=us-east-1
 EOF
 
 sudo chown root:ubuntu /etc/stowaway.env
