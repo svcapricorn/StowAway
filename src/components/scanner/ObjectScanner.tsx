@@ -4,7 +4,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Flashlight, Loader2, RefreshCw, AlertCircle, Check } from 'lucide-react';
-import { createWorker } from 'tesseract.js';
+
 import { BrowserMultiFormatReader, NotFoundException, BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { 
     Dialog, 
