@@ -8,9 +8,17 @@ vi.mock('@/context/InventoryContext', () => ({
   useInventory: () => useInventoryMock(),
 }));
 
-vi.mock('@/components/dashboard/StatusCard', () => ({ StatusCard: () => <div>STATUS CARD</div> }));
+vi.mock('@/components/dashboard/MetricGrid', () => ({ MetricGrid: () => <div>METRIC GRID</div> }));
 vi.mock('@/components/dashboard/AlertsList', () => ({ AlertsList: () => <div>ALERTS LIST</div> }));
 vi.mock('@/components/dashboard/QuickStats', () => ({ QuickStats: () => <div>QUICK STATS</div> }));
+
+const emptyStats = {
+  totalItems: 0,
+  lowStockCount: 0,
+  expiringSoonCount: 0,
+  expiredCount: 0,
+  categoryCounts: {},
+};
 
 function renderDashboard() {
   return render(
@@ -26,25 +34,25 @@ describe('Dashboard', () => {
   });
 
   it('shows loading skeletons while inventory data is loading', () => {
-    useInventoryMock.mockReturnValue({ items: [], exportToCSV: vi.fn(), isLoading: true });
+    useInventoryMock.mockReturnValue({ items: [], stats: emptyStats, exportToCSV: vi.fn(), isLoading: true });
 
     renderDashboard();
 
-    expect(screen.queryByText('STATUS CARD')).not.toBeInTheDocument();
+    expect(screen.queryByText('METRIC GRID')).not.toBeInTheDocument();
   });
 
   it('renders the dashboard sections once data has loaded', () => {
-    useInventoryMock.mockReturnValue({ items: [{ id: '1' }], exportToCSV: vi.fn(), isLoading: false });
+    useInventoryMock.mockReturnValue({ items: [{ id: '1' }], stats: emptyStats, exportToCSV: vi.fn(), isLoading: false });
 
     renderDashboard();
 
-    expect(screen.getByText('STATUS CARD')).toBeInTheDocument();
+    expect(screen.getByText('METRIC GRID')).toBeInTheDocument();
     expect(screen.getByText('ALERTS LIST')).toBeInTheDocument();
     expect(screen.getByText('QUICK STATS')).toBeInTheDocument();
   });
 
   it('disables the export button when there are no items', () => {
-    useInventoryMock.mockReturnValue({ items: [], exportToCSV: vi.fn(), isLoading: false });
+    useInventoryMock.mockReturnValue({ items: [], stats: emptyStats, exportToCSV: vi.fn(), isLoading: false });
 
     renderDashboard();
 
@@ -67,6 +75,7 @@ describe('Dashboard', () => {
 
     useInventoryMock.mockReturnValue({
       items: [{ id: '1' }],
+      stats: emptyStats,
       exportToCSV: vi.fn().mockReturnValue('a,b\n1,2'),
       isLoading: false,
     });

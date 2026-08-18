@@ -29,10 +29,13 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    h1: { fontSize: '2.5rem', fontWeight: 600 },
-    h2: { fontSize: '2rem', fontWeight: 600 },
-    h3: { fontSize: '1.75rem', fontWeight: 600 },
+    fontFamily: '"Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    h1: { fontFamily: '"Outfit", sans-serif', fontSize: '2.5rem', fontWeight: 600, letterSpacing: '-0.02em' },
+    h2: { fontFamily: '"Outfit", sans-serif', fontSize: '2rem', fontWeight: 600, letterSpacing: '-0.02em' },
+    h3: { fontFamily: '"Outfit", sans-serif', fontSize: '1.75rem', fontWeight: 600, letterSpacing: '-0.015em' },
+    h4: { fontFamily: '"Outfit", sans-serif', fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.015em' },
+    h5: { fontFamily: '"Outfit", sans-serif', fontWeight: 600 },
+    h6: { fontFamily: '"Outfit", sans-serif', fontWeight: 600 },
   },
   shape: {
     borderRadius: 12, // 0.75rem = 12px
