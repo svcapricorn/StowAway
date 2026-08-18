@@ -15,6 +15,34 @@ router.get('/ping', (req, res) => {
   res.json({ status: 'ok', userId });
 });
 
+// Read the printed text off a photographed label with a managed OCR service
+// (Google Cloud Vision, or AWS Textract DetectDocumentText). This replaces the
+// in-browser Tesseract fallback: better accuracy on packaging, and no wasm in
+// the client bundle.
+router.post('/vision/ocr', async (req: Request, res: Response) => {
+  const { imageData } = req.body as { imageData?: string };
+
+  const imageMatch = imageData?.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!imageMatch) {
+    res.status(400).json({ error: 'imageData must be a base64 image data URL' });
+    return;
+  }
+  const [, , base64Data] = imageMatch;
+
+  if (!isOcrConfigured()) {
+    res.status(503).json({ error: 'OCR is not configured on the server' });
+    return;
+  }
+
+  try {
+    const { text, provider } = await runOcr(base64Data);
+    res.json({ text, provider });
+  } catch (error) {
+    console.error('OCR failed:', error);
+    res.status(502).json({ error: 'OCR provider failed' });
+  }
+});
+
 // Identify a photographed item via Claude vision, keeping the API key server-side only
 router.post('/vision/identify', async (req: Request, res: Response) => {
   const { imageData } = req.body as { imageData?: string };
