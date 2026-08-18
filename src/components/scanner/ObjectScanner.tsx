@@ -145,6 +145,7 @@ async function preprocessForOcr(imageData: string): Promise<string> {
 async function runPreprocess(imageData: string): Promise<string> {
   try {
     const img = await loadImage(imageData);
+    const scale = 2;
 
     const canvas = document.createElement('canvas');
     canvas.width = img.width * scale;
