@@ -67,6 +67,21 @@ npm run test:coverage # run with a coverage report
 
 ## Automated Deploy
 
+### Where do I run this?
+
+There are two deploy targets and they live in different places:
+
+| Piece | Runs on | Must be deployed from |
+| --- | --- | --- |
+| API (Express + pm2) | The Lightsail instance | **The Lightsail box only** — pm2 and `/etc/stowaway.env` exist there |
+| Frontend (`dist/`) | S3 + CloudFront | **Anywhere** with the AWS CLI configured (Lightsail box, your Mac, or CI) |
+
+So:
+
+- **On the Lightsail box** → `npm run deploy` does both halves at once. This is the normal path.
+- **On your Mac (or CI)** → only the frontend can be deployed: `npm run deploy:frontend`. Useful when the 416 MB Lightsail instance is too small to run the Vite build (it swaps hard and can take 10–20 minutes, or get OOM-killed). Build on the Mac, ship `dist/`, and leave the API alone.
+- **Split approach** (recommended for a tiny instance): build + upload the frontend from your Mac, and run `npm run deploy:api` over SSH on the box.
+
 One-time setup on the Lightsail host:
 
 ```sh
@@ -76,17 +91,30 @@ cd ~/seamed-safe-haven
 cp deploy.env.example deploy.env    # fill in S3_BUCKET + CLOUDFRONT_DISTRIBUTION_ID
 ```
 
-Then every deploy is one command:
+Same one-time setup on your Mac if you want to deploy the frontend from there (AWS CLI + `deploy.env`; `deploy.env` is gitignored, so each machine needs its own).
+
+### Commands
 
 ```sh
-npm run deploy                 # git pull + API (pm2) + frontend (S3 + CloudFront)
-npm run deploy:api             # API only
-npm run deploy:frontend        # frontend only
+npm run deploy                 # git pull, then API (pm2) + frontend (S3/CloudFront) IN PARALLEL
+npm run deploy:sequential      # same, but one after the other (use on low-RAM hosts)
+npm run deploy:upload          # skip the build, just upload an existing dist/
+npm run deploy:api             # API only  (Lightsail box only)
+npm run deploy:frontend        # frontend only (any machine with the AWS CLI)
 ```
+
+Extra flags accepted by `scripts/deploy.sh`: `--no-pull`, `--api-only`, `--frontend-only`, `--skip-build`, `--sequential`.
+
+In parallel mode both halves stream to your terminal prefixed with `[api]` / `[web]`, and full logs are written to `/tmp/stowaway-deploy-api.log` and `/tmp/stowaway-deploy-web.log`. If either half fails the command exits non-zero and points you at the log.
 
 The frontend script uploads hashed assets with a one-year immutable cache, uploads `index.html` with no-cache, creates a CloudFront `/*` invalidation, and waits for it to complete. The API script builds, sources `/etc/stowaway.env`, restarts pm2, and health-checks `127.0.0.1:$PORT/health`.
 
-Note: use `npm install` (not `npm ci`) on the host — dependencies are managed with `bun.lock`, so the committed `package-lock.json` lags behind. The deploy script already does the right thing, and prefers `bun install` when bun is present.
+Notes:
+
+- Use `npm install` (not `npm ci`) on the host — dependencies are managed with `bun.lock`, so the committed `package-lock.json` lags behind. The deploy script already does the right thing, and prefers `bun install` when bun is present.
+- Server-side secrets (`GOOGLE_VISION_API_KEY`, Supabase keys, etc.) live in `/etc/stowaway.env` on the Lightsail box and are picked up by the pm2 restart — they are never part of the frontend build.
+- `VITE_*` variables are baked into the bundle at build time, so whichever machine runs the build needs them present.
+
 
 ## Production Architecture
 
