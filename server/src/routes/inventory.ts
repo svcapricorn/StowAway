@@ -2,6 +2,7 @@ import { Router, Response, Request } from 'express';
 import { CustomRequest, verifyToken } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { safeParse, safeDate } from '../lib/parsing';
+import { isOcrConfigured, runOcr } from '../lib/ocr';
 
 const router = Router();
 
