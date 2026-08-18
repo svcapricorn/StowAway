@@ -4,7 +4,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Flashlight, Loader2, RefreshCw, AlertCircle, Check } from 'lucide-react';
-import { createWorker } from 'tesseract.js';
+
 import { BrowserMultiFormatReader, NotFoundException, BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { 
     Dialog, 
@@ -97,6 +97,38 @@ async function identifyViaBackend(imageData: string): Promise<ObjectScanResult |
   }
 }
 
+// Read the label text with the server's managed OCR service (Google Cloud
+// Vision / AWS Textract). Server-side OCR is far more accurate on curved,
+// glossy packaging than in-browser Tesseract, and keeps the wasm bundle out of
+// the client build entirely.
+async function ocrViaBackend(imageData: string): Promise<string | null> {
+  try {
+    const headers = await getHeaders();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    const response = await fetch(`${API_URL}/vision/ocr`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({ imageData }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.warn('OCR backend returned non-200 status:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return typeof data?.text === 'string' && data.text.trim() ? data.text : null;
+  } catch (err) {
+    console.error('OCR backend request failed:', err);
+    return null;
+  }
+}
+
 // Barcode formats worth checking on a still photo (product/UPC codes, not location stickers)
 const barcodeHints = new Map();
 barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
@@ -129,9 +161,9 @@ function loadImage(src: string, timeoutMs = 800): Promise<HTMLImageElement> {
 }
 
 
-// Boost contrast and convert to grayscale, upscaled 2x — Tesseract reads printed
-// labels far more reliably on a high-contrast, larger image than on a raw photo.
-// Preprocessing is used by both the barcode retry and the OCR fallback; cache the
+// Boost contrast and convert to grayscale, upscaled 2x — glossy packaging often
+// defeats the first barcode pass; a high-contrast copy decodes much more often.
+// Cache the
 // last result so a single capture is only enhanced once.
 let preprocessCache: { src: string; out: string } | null = null;
 
@@ -384,16 +416,12 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
       }
     }
 
-    // Last resort: on-device OCR against a contrast-boosted copy of the photo
+    // Last resort: server-side OCR (Google Cloud Vision / AWS Textract)
     if (!result) {
       setAnalysisStage('Reading text on the package…');
       try {
-        const ocrImage = await preprocessForOcr(imageData);
-        const worker = await createWorker('eng');
-        const ret = await worker.recognize(ocrImage);
-        await worker.terminate();
-
-        const rawText = ret.data.text;
+        const rawText = await ocrViaBackend(imageData);
+        if (!rawText) throw new Error('No text returned by OCR');
         const text = rawText.toLowerCase();
         console.log('OCR Detected Text:', text);
 
@@ -437,7 +465,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
           }
         }
       } catch (err) {
-        console.error('Local OCR failed:', err);
+        console.error('Label OCR failed:', err);
       }
     }
 

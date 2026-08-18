@@ -8,10 +8,8 @@ vi.mock('@/lib/database', () => ({
   getHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' }),
 }));
 
-const { decodeFromImageUrlMock, recognizeMock, terminateMock } = vi.hoisted(() => ({
+const { decodeFromImageUrlMock } = vi.hoisted(() => ({
   decodeFromImageUrlMock: vi.fn(),
-  recognizeMock: vi.fn(),
-  terminateMock: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@zxing/library', () => ({
@@ -23,10 +21,6 @@ vi.mock('@zxing/library', () => ({
   NotFoundException: class NotFoundException extends Error {},
   BarcodeFormat: { UPC_A: 0, UPC_E: 1, EAN_13: 2, EAN_8: 3, CODE_128: 4 },
   DecodeHintType: { POSSIBLE_FORMATS: 0 },
-}));
-
-vi.mock('tesseract.js', () => ({
-  createWorker: vi.fn().mockResolvedValue({ recognize: recognizeMock, terminate: terminateMock }),
 }));
 
 function mockCameraDom() {
@@ -92,7 +86,6 @@ describe('ObjectScanner', () => {
       mockCameraDom();
       mockGetUserMedia();
       decodeFromImageUrlMock.mockRejectedValue(new Error('no barcode'));
-      recognizeMock.mockResolvedValue({ data: { text: '' } });
       (navigator as any).vibrate = vi.fn();
     });
 

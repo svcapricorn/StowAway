@@ -11,7 +11,7 @@ import { Toaster } from "@/components/ui/toaster"; // Keeping for smooth transit
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-// Lazy-load routes so heavy per-page dependencies (tesseract.js, exceljs, jspdf, zxing)
+// Lazy-load routes so heavy per-page dependencies (exceljs, jspdf, zxing)
 // aren't bundled into the initial download needed just to render the login screen.
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const InventoryPage = lazy(() => import("@/pages/Inventory"));
