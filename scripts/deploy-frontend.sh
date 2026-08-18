@@ -36,7 +36,11 @@ if [[ "${1:-}" != "--skip-build" ]]; then
     npm install
   fi
 
-  echo "==> Building frontend"
+  # Small Lightsail instances OOM during the Vite build (default heap is tied to
+  # available RAM). Give V8 an explicit, larger budget unless the caller set one.
+  export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
+
+  echo "==> Building frontend (NODE_OPTIONS=$NODE_OPTIONS)"
   npm run build
 fi
 
