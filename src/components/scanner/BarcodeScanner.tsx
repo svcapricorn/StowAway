@@ -142,6 +142,7 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
         open={isOpen} 
         onClose={onClose} 
         fullScreen 
+        aria-labelledby="barcode-scanner-title"
         PaperProps={{ 
             sx: { bgcolor: 'black' } 
         }}
@@ -149,7 +150,9 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
     >
       <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
           {/* Header */}
-          <Box sx={{ 
+          <Box
+              component="header"
+              sx={{ 
               position: 'absolute', 
               top: 0, 
               left: 0, 
@@ -158,22 +161,37 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
               zIndex: 10, 
               display: 'flex', 
               justifyContent: 'space-between',
-              background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)'
+              alignItems: 'center',
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)'
           }}>
-              <IconButton onClick={onClose} sx={{ color: 'white' }}>
-                  <X />
+              <IconButton
+                  onClick={onClose}
+                  aria-label="Close scanner"
+                  sx={{ color: 'common.white', minWidth: 48, minHeight: 48 }}
+              >
+                  <X aria-hidden="true" />
               </IconButton>
               
-              <Typography variant="subtitle1" sx={{ color: 'white', alignSelf: 'center', fontWeight: 500 }}>
+              <Typography
+                  id="barcode-scanner-title"
+                  component="h2"
+                  variant="subtitle1"
+                  sx={{ color: 'common.white', fontWeight: 600 }}
+              >
                   {title}
               </Typography>
 
               {hasTorch ? (
-                  <IconButton onClick={toggleTorch} sx={{ color: torchOn ? 'warning.main' : 'white' }}>
-                      <Flashlight />
+                  <IconButton
+                      onClick={toggleTorch}
+                      aria-label={torchOn ? 'Turn flashlight off' : 'Turn flashlight on'}
+                      aria-pressed={torchOn}
+                      sx={{ color: torchOn ? 'warning.main' : 'common.white', minWidth: 48, minHeight: 48 }}
+                  >
+                      <Flashlight aria-hidden="true" />
                   </IconButton>
               ) : (
-                  <Box sx={{ width: 40 }} />
+                  <Box sx={{ width: 48 }} />
               )}
           </Box>
 
@@ -181,12 +199,15 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
           <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
               <video 
                   ref={videoRef} 
+                  playsInline
+                  muted
+                  aria-label="Live camera view for scanning a barcode"
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
 
               {/* Overlay Guidance */}
               {!isInitializing && !error && (
-                  <Box sx={{ 
+                  <Box aria-hidden="true" sx={{ 
                       position: 'absolute', 
                       top: '50%', 
                       left: '50%', 
@@ -214,16 +235,16 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
               )}
 
               {isInitializing && (
-                  <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'black', flexDirection: 'column', gap: 2 }}>
-                      <CircularProgress sx={{ color: 'white' }} />
-                      <Typography color="white">Starting camera...</Typography>
+                  <Box role="status" aria-live="polite" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'black', flexDirection: 'column', gap: 2 }}>
+                      <CircularProgress aria-hidden="true" sx={{ color: 'common.white' }} />
+                      <Typography sx={{ color: 'common.white' }}>Starting camera…</Typography>
                   </Box>
               )}
 
               {error && (
                   <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'black', p: 3 }}>
-                      <Alert severity="error" variant="filled" action={
-                          <Button color="inherit" size="small" onClick={onClose}>Close</Button>
+                      <Alert role="alert" severity="error" variant="filled" action={
+                          <Button color="inherit" size="small" onClick={onClose} sx={{ minHeight: 44 }}>Close</Button>
                       }>
                           {error}
                       </Alert>
@@ -231,11 +252,11 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
               )}
           </Box>
           
-          <Box sx={{ p: 4, textAlign: 'center', color: 'white', background: 'black', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Typography variant="body2" sx={{ opacity: 0.8 }}>
+          <Box sx={{ p: 4, textAlign: 'center', bgcolor: 'common.black', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="body2" sx={{ color: 'common.white' }}>
                   Position the barcode within the frame
               </Typography>
-              <Button color="inherit" onClick={onClose}>
+              <Button onClick={onClose} sx={{ color: 'common.white', minHeight: 48, textTransform: 'none' }}>
                   Enter manually instead
               </Button>
           </Box>
@@ -243,3 +264,4 @@ export function BarcodeScanner({ isOpen, onClose, onScan, title = 'Scan Barcode'
     </Dialog>
   );
 }
+

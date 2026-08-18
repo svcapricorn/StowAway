@@ -48,7 +48,7 @@ export function AppShell() {
   }, [location.pathname]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', bgcolor: 'background.default' }}>
       {/* Header */}
       <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>
         <Toolbar>
@@ -59,11 +59,16 @@ export function AppShell() {
           
           {hasAlerts && (
             <Badge badgeContent={alertCount} color="error">
-               <Typography variant="caption" sx={{ bgcolor: 'rgba(255,255,255,0.1)', px: 1, py: 0.5, borderRadius: 1 }}>
+               <Typography
+                 variant="caption"
+                 aria-label={`${alertCount} inventory alerts need attention`}
+                 sx={{ bgcolor: 'rgba(255,255,255,0.18)', px: 1, py: 0.5, borderRadius: 1 }}
+               >
                  Alerts
                </Typography>
             </Badge>
           )}
+
         </Toolbar>
       </AppBar>
 

@@ -550,14 +550,16 @@ export function ItemForm({
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 1, mb: 2 }}>
                 {formData.photos.map((photo, index) => (
                     <Box key={index} sx={{ position: 'relative', aspectRatio: '1', borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider' }}>
-                        <img src={photo} alt={`Item ${index + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={photo} alt={`Photo ${index + 1} of this item`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <IconButton 
                             size="small" 
                             onClick={() => handlePhotoRemove(index)}
-                            sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(0,0,0,0.5)', color: 'white', padding: 0.5, '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}
+                            aria-label={`Remove photo ${index + 1}`}
+                            sx={{ position: 'absolute', top: 2, right: 2, minWidth: 32, minHeight: 32, bgcolor: 'rgba(0,0,0,0.6)', color: 'common.white', padding: 0.5, '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' } }}
                         >
-                            <X size={12} />
+                            <X size={14} aria-hidden="true" />
                         </IconButton>
+
                     </Box>
                 ))}
                 

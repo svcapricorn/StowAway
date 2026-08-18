@@ -57,12 +57,14 @@ const MEDICAL_SUPPLY_PATTERNS: { keywords: string[]; name: string; category: Ite
   { keywords: ['eye wash', 'saline'], name: 'Eye Wash Solution', category: 'first-aid' },
 ];
 
-// Identify a photo server-side so the vision API key never reaches the browser
+// Identify a photo server-side so the vision API key never reaches the browser.
+// The vision round-trip can legitimately take ~20s on a slow link; the previous
+// 15s abort cut it off and silently fell back to the much weaker on-device OCR.
 async function identifyViaBackend(imageData: string): Promise<ObjectScanResult | null> {
   try {
     const headers = await getHeaders();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
     const response = await fetch(`${API_URL}/vision/identify`, {
       method: 'POST',
@@ -104,21 +106,87 @@ barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
   BarcodeFormat.EAN_8,
   BarcodeFormat.CODE_128,
 ]);
+barcodeHints.set(DecodeHintType.TRY_HARDER, true);
 const barcodeReader = new BrowserMultiFormatReader(barcodeHints);
 
-// Look for a UPC/EAN barcode in the captured still photo so items can be identified
-// by the printed barcode, not only by the picture of the item itself
-async function detectBarcode(imageData: string): Promise<string | null> {
+// Load a data URL into an <img> so it can be redrawn/preprocessed on a canvas
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// Boost contrast and convert to grayscale, upscaled 2x — Tesseract reads printed
+// labels far more reliably on a high-contrast, larger image than on a raw photo.
+async function preprocessForOcr(imageData: string): Promise<string> {
   try {
-    const result = await barcodeReader.decodeFromImageUrl(imageData);
-    return result.getText();
-  } catch (err) {
-    if (!(err instanceof NotFoundException)) {
-      console.warn('Barcode detection error:', err);
+    const img = await loadImage(imageData);
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return imageData;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const px = frame.data;
+
+    // Pass 1: grayscale + collect min/max for a contrast stretch
+    let min = 255;
+    let max = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const gray = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) | 0;
+      px[i] = px[i + 1] = px[i + 2] = gray;
+      if (gray < min) min = gray;
+      if (gray > max) max = gray;
     }
-    return null;
+
+    // Pass 2: stretch the histogram so faint print separates from packaging
+    const range = Math.max(1, max - min);
+    for (let i = 0; i < px.length; i += 4) {
+      const stretched = Math.max(0, Math.min(255, ((px[i] - min) / range) * 255));
+      px[i] = px[i + 1] = px[i + 2] = stretched;
+    }
+
+    ctx.putImageData(frame, 0, 0);
+    return canvas.toDataURL('image/png');
+  } catch (err) {
+    console.warn('OCR preprocessing failed, using original image:', err);
+    return imageData;
   }
 }
+
+// Look for a UPC/EAN barcode in the captured still photo so items can be identified
+// by the printed barcode, not only by the picture of the item itself.
+// Retried against a contrast-boosted copy because glossy packaging often defeats
+// the first pass.
+async function detectBarcode(imageData: string): Promise<string | null> {
+  const attempt = async (src: string) => {
+    try {
+      const result = await barcodeReader.decodeFromImageUrl(src);
+      return result.getText();
+    } catch (err) {
+      if (!(err instanceof NotFoundException)) {
+        console.warn('Barcode detection error:', err);
+      }
+      return null;
+    }
+  };
+
+  const direct = await attempt(imageData);
+  if (direct) return direct;
+
+  const enhanced = await preprocessForOcr(imageData);
+  return enhanced === imageData ? null : attempt(enhanced);
+}
+
 
 // Look up a scanned barcode against a free public product database
 async function lookupBarcodeName(barcode: string): Promise<{ name: string; category: ItemCategory } | null> {
@@ -157,6 +225,8 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
   const [identificationFailed, setIdentificationFailed] = useState(false);
   const [pendingResult, setPendingResult] = useState<ObjectScanResult | null>(null);
   const [isHolding, setIsHolding] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState<string | null>(null);
+
 
   const startCamera = useCallback(async () => {
     setIsInitializing(true);
@@ -166,11 +236,13 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     try {
       let stream: MediaStream;
       try {
+        // Request a high-resolution stream: small labels and dosages are
+        // unreadable at 1280x720 once the photo is compressed.
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: 'environment', // Prefer back camera
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            facingMode: { ideal: 'environment' }, // Prefer back camera
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
         });
       } catch (err) {
@@ -190,7 +262,20 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
       const track = stream.getVideoTracks()[0];
       const capabilities = (track.getCapabilities && track.getCapabilities()) as any;
       setHasTorch(capabilities?.torch === true);
+
+      // Continuous autofocus keeps close-up label text sharp; ignored where unsupported.
+      try {
+        const advanced: MediaTrackConstraintSet[] = [];
+        if (capabilities?.focusMode?.includes?.('continuous')) {
+          advanced.push({ focusMode: 'continuous' } as any);
+        }
+        if (advanced.length) await track.applyConstraints({ advanced } as any);
+      } catch (focusErr) {
+        console.warn('Could not apply focus constraints:', focusErr);
+      }
+
       console.log(`[ObjectScanner] Camera started. Torch capability: ${capabilities?.torch === true}`);
+
 
       setIsInitializing(false);
     } catch (err) {
@@ -252,70 +337,93 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
   };
 
   const analyzeImage = useCallback(async (imageData: string) => {
-    // setIsAnalyzing(true); // Already set in captureImage
+    // Run the local barcode read and the server vision call together — the
+    // barcode pass used to block the vision request and add seconds of latency.
+    setAnalysisStage('Reading label and barcode…');
+    const [barcode, visionResult] = await Promise.all([
+      detectBarcode(imageData),
+      identifyViaBackend(imageData),
+    ]);
 
-    // Check for a UPC/EAN barcode on the packaging first (fast, local, no network round-trip)
-    const barcode = await detectBarcode(imageData);
+    let result: ObjectScanResult | null = visionResult;
 
-    let result: ObjectScanResult | null = await identifyViaBackend(imageData);
-
-    // Fallback to local OCR (Tesseract) if the backend couldn't identify it
-    if (!result) {
-         console.log("Using local OCR (Tesseract.js)...");
-         try {
-             const worker = await createWorker('eng');
-             const ret = await worker.recognize(imageData);
-             await worker.terminate();
-    
-             const text = ret.data.text.toLowerCase();
-             console.log("OCR Detected Text:", text);
-    
-             // Simple keyword matching from the extracted text
-             const match = MEDICAL_SUPPLY_PATTERNS.find(p => 
-                p.keywords.some(k => text.includes(k)) || 
-                text.includes(p.name.toLowerCase())
-             );
-    
-             if (match) {
-                result = {
-                    name: match.name,
-                    category: match.category,
-                    confidence: 0.8, 
-                    image: imageData
-                }
-             } else if (text.length > 5) {
-                 // Fallback: Use the most prominent text lines
-                 const lines = ret.data.text.split('\n').filter(l => l.length > 3).slice(0, 2);
-                 if (lines.length > 0) {
-                     result = {
-                         name: lines.join(' ').substring(0, 50),
-                         category: 'other',
-                         confidence: 0.5,
-                         image: imageData
-                     }
-                 }
-             }
-         } catch (err) {
-             console.error("Local OCR failed:", err);
-         }
-    }
-
-    // If a barcode was found but the image/OCR pass didn't produce a name, try a UPC lookup
-    if (barcode && (!result || !result.name)) {
+    // A barcode is an exact product identifier, so trust a successful lookup
+    // over a low-confidence vision guess.
+    if (barcode && (!result || result.confidence < 0.6)) {
+      setAnalysisStage('Looking up barcode…');
       const productMatch = await lookupBarcodeName(barcode);
       if (productMatch) {
         result = {
           name: productMatch.name,
           category: productMatch.category,
-          confidence: 0.75,
+          confidence: 0.9,
           image: imageData,
         };
+      }
+    }
+
+    // Last resort: on-device OCR against a contrast-boosted copy of the photo
+    if (!result) {
+      setAnalysisStage('Reading text on the package…');
+      try {
+        const ocrImage = await preprocessForOcr(imageData);
+        const worker = await createWorker('eng');
+        const ret = await worker.recognize(ocrImage);
+        await worker.terminate();
+
+        const rawText = ret.data.text;
+        const text = rawText.toLowerCase();
+        console.log('OCR Detected Text:', text);
+
+        const match = MEDICAL_SUPPLY_PATTERNS.find(p =>
+          p.keywords.some(k => text.includes(k)) ||
+          text.includes(p.name.toLowerCase())
+        );
+
+        if (match) {
+          result = {
+            name: match.name,
+            category: match.category,
+            confidence: 0.8,
+            image: imageData,
+          };
+        } else {
+          // Pick the most product-name-like line rather than blindly joining the
+          // first two lines (which often grabs legal text or barcode digits).
+          const candidates = rawText
+            .split('\n')
+            .map(l => l.replace(/[^A-Za-z0-9%.\-+/ ]/g, ' ').replace(/\s+/g, ' ').trim())
+            .filter(l => l.length >= 4 && /[A-Za-z]{3}/.test(l) && !/^\d+$/.test(l));
+
+          const scored = candidates
+            .map(line => {
+              const letters = (line.match(/[A-Za-z]/g) || []).length;
+              const upper = (line.match(/[A-Z]/g) || []).length;
+              // Favour longer, largely-uppercase lines: that's how brand and
+              // product names are printed on packaging.
+              return { line, score: letters + upper * 1.5 - Math.abs(line.length - 24) };
+            })
+            .sort((a, b) => b.score - a.score);
+
+          if (scored.length > 0) {
+            result = {
+              name: scored[0].line.substring(0, 60),
+              category: 'other',
+              confidence: 0.45,
+              image: imageData,
+            };
+          }
+        }
+      } catch (err) {
+        console.error('Local OCR failed:', err);
       }
     }
 
     if (barcode && result) {
       result = { ...result, barcode };
     }
+
+    setAnalysisStage(null);
 
     if (!result) {
       setIsAnalyzing(false);
@@ -329,6 +437,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     // Hold for the user to confirm this is the right item before finalizing
     setPendingResult(result);
   }, []);
+
 
   const captureImage = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -346,9 +455,10 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
             const video = videoRef.current;
             const canvas = canvasRef.current;
 
-            // Performance optimization: Scale down image for faster API transfer
-            // Max 720px is sufficient for text recognition
-            const MAX_DIMENSION = 720;
+            // 720px + quality 0.6 lost the small print (dosages, strengths) that
+            // identification depends on. 1440px at quality 0.9 keeps labels legible
+            // and is still comfortably inside the vision API's size limits.
+            const MAX_DIMENSION = 1440;
             let width = video.videoWidth;
             let height = video.videoHeight;
 
@@ -370,11 +480,12 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (!ctx) throw new Error('Could not get canvas context');
 
-            // Draw scaled image
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(video, 0, 0, width, height);
 
-            // Reduce quality to 0.6 for better performance/speed
-            const imageData = canvas.toDataURL('image/jpeg', 0.6);
+            const imageData = canvas.toDataURL('image/jpeg', 0.9);
+
             setCapturedImage(imageData);
             
             // Pause video
@@ -471,8 +582,10 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     setIdentificationFailed(false);
     setPendingResult(null);
     setIsHolding(false);
+    setAnalysisStage(null);
     // Video playback resumption is handled by the new useEffect
   };
+
 
   // User confirmed the identified item is correct — hand the result back to the caller
   const confirmIdentification = () => {
@@ -486,6 +599,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
         open={isOpen} 
         onClose={onClose} 
         fullScreen 
+        aria-labelledby="object-scanner-title"
         PaperProps={{ 
             sx: { bgcolor: 'black' } 
         }}
@@ -493,7 +607,9 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     >
         <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
              {/* Header */}
-             <Box sx={{ 
+             <Box
+                component="header"
+                sx={{ 
                 position: 'absolute', 
                 top: 0, 
                 left: 0, 
@@ -502,22 +618,38 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                 zIndex: 10, 
                 display: 'flex', 
                 justifyContent: 'space-between',
-                background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)'
+                alignItems: 'center',
+                background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)'
             }}>
-                <IconButton onClick={onClose} sx={{ color: 'white' }} disabled={isAnalyzing}>
-                    <X />
+                <IconButton
+                    onClick={onClose}
+                    aria-label="Close scanner"
+                    disabled={isAnalyzing}
+                    sx={{ color: 'common.white', minWidth: 48, minHeight: 48 }}
+                >
+                    <X aria-hidden="true" />
                 </IconButton>
                 
-                <Typography variant="subtitle1" sx={{ color: 'white', alignSelf: 'center', fontWeight: 500 }}>
+                <Typography
+                    id="object-scanner-title"
+                    component="h2"
+                    variant="subtitle1"
+                    sx={{ color: 'common.white', fontWeight: 600 }}
+                >
                     Identify Item
                 </Typography>
 
                 {hasTorch && !capturedImage ? (
-                    <IconButton onClick={toggleTorch} sx={{ color: torchOn ? 'warning.main' : 'white' }}>
-                        <Flashlight />
+                    <IconButton
+                        onClick={toggleTorch}
+                        aria-label={torchOn ? 'Turn flashlight off' : 'Turn flashlight on'}
+                        aria-pressed={torchOn}
+                        sx={{ color: torchOn ? 'warning.main' : 'common.white', minWidth: 48, minHeight: 48 }}
+                    >
+                        <Flashlight aria-hidden="true" />
                     </IconButton>
                 ) : (
-                    <Box sx={{ width: 40 }} />
+                    <Box sx={{ width: 48 }} />
                 )}
             </Box>
 
@@ -529,21 +661,22 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         playsInline
                         muted
+                        aria-label="Live camera view for identifying an item"
                     />
                 ) : (
                    <img 
                       src={capturedImage} 
-                      alt="Captured" 
+                      alt="Photo you just captured of the item being identified" 
                       style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
                    />
                 )}
                 
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
-                <canvas ref={motionCanvasRef} width={32} height={24} style={{ display: 'none' }} />
+                <canvas ref={canvasRef} aria-hidden="true" style={{ display: 'none' }} />
+                <canvas ref={motionCanvasRef} aria-hidden="true" width={32} height={24} style={{ display: 'none' }} />
 
                 {/* Viewfinder / Guidance */}
                 {!capturedImage && !isInitializing && (
-                     <Box sx={{ 
+                     <Box aria-hidden="true" sx={{ 
                         position: 'absolute', 
                         top: '50%', 
                         left: '50%', 
@@ -561,23 +694,26 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                 )}
 
                 {isAnalyzing && (
-                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.4)', flexDirection: 'column', gap: 2 }}>
-                        <CircularProgress sx={{ color: 'white' }} size={60} />
-                        <Typography color="white" fontWeight="bold">Identifying...</Typography>
+                    <Box role="status" aria-live="polite" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.55)', flexDirection: 'column', gap: 2 }}>
+                        <CircularProgress aria-hidden="true" sx={{ color: 'common.white' }} size={60} />
+                        <Typography sx={{ color: 'common.white' }} fontWeight="bold">
+                            {analysisStage ?? 'Identifying…'}
+                        </Typography>
                     </Box>
                 )}
 
+
                 {isInitializing && (
-                  <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
-                      <CircularProgress sx={{ color: 'white' }} />
-                      <Typography color="white">Starting camera...</Typography>
+                  <Box role="status" aria-live="polite" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
+                      <CircularProgress aria-hidden="true" sx={{ color: 'common.white' }} />
+                      <Typography sx={{ color: 'common.white' }}>Starting camera…</Typography>
                   </Box>
                 )}
 
                 {error && (
-                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.8)', p: 3 }}>
-                         <Alert severity="error" variant="filled" action={
-                            <Button color="inherit" size="small" onClick={retakePhoto}>Try Again</Button>
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.85)', p: 3 }}>
+                         <Alert role="alert" severity="error" variant="filled" action={
+                            <Button color="inherit" size="small" onClick={retakePhoto} sx={{ minHeight: 44 }}>Try Again</Button>
                          }>
                             {error}
                         </Alert>
@@ -585,15 +721,15 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                 )}
 
                 {identificationFailed && !error && (
-                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.8)', p: 3 }}>
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.85)', p: 3 }}>
                         <Stack spacing={2} sx={{ width: '100%', maxWidth: 400 }}>
-                            <Alert severity="warning" variant="filled">
-                                Couldn't identify this item. Try better lighting, or fill in the details yourself.
+                            <Alert role="alert" severity="warning" variant="filled">
+                                Couldn't identify this item. Try better lighting, move closer to the label, or fill in the details yourself.
                             </Alert>
-                            <Button variant="contained" color="secondary" startIcon={<RefreshCw />} onClick={retakePhoto}>
+                            <Button variant="contained" color="secondary" startIcon={<RefreshCw aria-hidden="true" />} onClick={retakePhoto} sx={{ minHeight: 48 }}>
                                 Retake Photo
                             </Button>
-                            <Button variant="outlined" color="inherit" sx={{ color: 'white', borderColor: 'white' }} onClick={onClose}>
+                            <Button variant="outlined" onClick={onClose} sx={{ minHeight: 48, color: 'common.white', borderColor: 'common.white' }}>
                                 Enter Details Manually
                             </Button>
                         </Stack>
@@ -602,19 +738,24 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
 
                 {/* Confirm the identified item before handing it back to the form */}
                 {pendingResult && !isAnalyzing && (
-                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.6)', p: 3 }}>
+                    <Box
+                        role="region"
+                        aria-live="polite"
+                        aria-labelledby="scan-confirm-heading"
+                        sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.6)', p: 3 }}
+                    >
                         <Stack spacing={2} sx={{ width: '100%', maxWidth: 400, bgcolor: 'background.paper', borderRadius: 3, p: 3, mb: 2 }}>
-                            <Typography variant="overline" color="text.secondary">Is this correct?</Typography>
+                            <Typography id="scan-confirm-heading" component="h3" variant="overline" color="text.secondary">Is this correct?</Typography>
                             <Typography variant="h6" fontWeight={700}>{pendingResult.name || 'Unnamed item'}</Typography>
                             <Typography variant="body2" color="text.secondary">
                                 {pendingResult.category} • {Math.round(pendingResult.confidence * 100)}% confidence
                                 {pendingResult.barcode ? ` • Barcode ${pendingResult.barcode}` : ''}
                             </Typography>
                             <Stack direction="row" spacing={1.5}>
-                                <Button variant="outlined" color="inherit" startIcon={<RefreshCw />} onClick={retakePhoto} fullWidth>
+                                <Button variant="outlined" startIcon={<RefreshCw aria-hidden="true" />} onClick={retakePhoto} fullWidth sx={{ minHeight: 48 }}>
                                     No, Retake
                                 </Button>
-                                <Button variant="contained" color="success" startIcon={<Check />} onClick={confirmIdentification} fullWidth>
+                                <Button variant="contained" color="success" startIcon={<Check aria-hidden="true" />} onClick={confirmIdentification} fullWidth sx={{ minHeight: 48 }}>
                                     Yes, That's It
                                 </Button>
                             </Stack>
@@ -624,17 +765,17 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
             </Box>
 
             {/* Footer / Controls */}
-            <Box sx={{ p: 4, bgcolor: 'black', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <Box sx={{ p: 4, bgcolor: 'common.black', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 {!capturedImage && !isInitializing ? (
                     <Button 
                         onClick={captureImage}
                         variant="contained" 
                         color="secondary" 
                         size="large"
-                        startIcon={<Camera />}
+                        startIcon={<Camera aria-hidden="true" />}
                         fullWidth
                         sx={{ 
-                            height: 56, 
+                            minHeight: 56, 
                             borderRadius: 2, 
                             fontSize: '1rem', 
                             textTransform: 'none',
@@ -647,12 +788,11 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                     <Button 
                         onClick={retakePhoto} 
                         variant="outlined" 
-                        color="inherit" 
-                        startIcon={<RefreshCw />}
+                        startIcon={<RefreshCw aria-hidden="true" />}
                         sx={{ 
-                            color: 'white', 
-                            borderColor: 'white', 
-                            height: 56, 
+                            color: 'common.white', 
+                            borderColor: 'common.white', 
+                            minHeight: 56, 
                             borderRadius: 2,
                             textTransform: 'none'
                         }}
@@ -662,28 +802,34 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                     </Button>
                 ) : null}
                 
-                <Typography variant="caption" sx={{ color: 'white', opacity: 0.7 }}>
+                <Typography
+                    variant="caption"
+                    role="status"
+                    aria-live="polite"
+                    sx={{ color: 'common.white' }}
+                >
                   {pendingResult
                     ? 'Confirm the item above'
                     : capturedImage
-                    ? 'Analyzing the captured image...'
+                    ? analysisStage ?? 'Analyzing the captured image…'
                     : isHolding
                     ? 'Hold still… capturing'
-                    : 'Point camera at the item and hold steady'}
+                    : 'Point camera at the item label and hold steady'}
                 </Typography>
                 
                 <Button 
                     onClick={onClose} 
                     sx={{ 
-                        color: 'white', 
-                        opacity: 0.7, 
+                        color: 'common.white', 
                         width: '100%',
+                        minHeight: 48,
                         textTransform: 'none' 
                     }}
                 >
                   Cancel
                 </Button>
             </Box>
+
         </Box>
     </Dialog>
   );
