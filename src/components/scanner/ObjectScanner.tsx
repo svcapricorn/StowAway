@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Flashlight, Loader2, RefreshCw, AlertCircle, Check } from 'lucide-react';
 
 import { BrowserMultiFormatReader, NotFoundException, BarcodeFormat, DecodeHintType } from '@zxing/library';
+// Separate package for continuous decode-from-live-video-element support (not in @zxing/library's browser reader).
+import { BrowserMultiFormatReader as LiveBarcodeReader, IScannerControls } from '@zxing/browser';
 import { 
     Dialog, 
     IconButton, 
@@ -140,6 +142,9 @@ barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
 ]);
 barcodeHints.set(DecodeHintType.TRY_HARDER, true);
 const barcodeReader = new BrowserMultiFormatReader(barcodeHints);
+// Scans the live preview continuously so a UPC label captures the instant it's readable,
+// instead of waiting for the phone-stillness timer + a still-photo decode.
+const liveBarcodeReader = new LiveBarcodeReader(barcodeHints);
 
 // Load a data URL into an <img> so it can be redrawn/preprocessed on a canvas.
 // Guarded by a timeout: environments that never fire load/error events must not
@@ -160,6 +165,26 @@ function loadImage(src: string, timeoutMs = 800): Promise<HTMLImageElement> {
   });
 }
 
+// Cheap focus/blur proxy: variance of a Laplacian-style gradient over the red
+// channel. Out-of-focus frames smooth away fine edges, so their variance is much
+// lower than a sharp frame of the same scene — used to gate auto-capture on focus,
+// not just motion stillness.
+function sharpnessScore(data: Uint8ClampedArray, width: number, height: number): number {
+  let sum = 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = (y * width + x) * 4;
+      const lap = data[i - 4] + data[i + 4] + data[i - width * 4] + data[i + width * 4] - 4 * data[i];
+      sum += lap;
+      sumSq += lap * lap;
+      count++;
+    }
+  }
+  const mean = sum / count;
+  return sumSq / count - mean * mean;
+}
 
 // Boost contrast and convert to grayscale, upscaled 2x — glossy packaging often
 // defeats the first barcode pass; a high-contrast copy decodes much more often.
@@ -390,12 +415,14 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     }
   };
 
-  const analyzeImage = useCallback(async (imageData: string) => {
+  const analyzeImage = useCallback(async (imageData: string, knownBarcode?: string) => {
     // Run the local barcode read and the server vision call together — the
     // barcode pass used to block the vision request and add seconds of latency.
+    // If the live scanner already decoded a barcode, skip re-detecting on the
+    // (possibly-compressed) still — the live decode is often more reliable anyway.
     setAnalysisStage('Reading label and barcode…');
     const [barcode, visionResult] = await Promise.all([
-      detectBarcode(imageData),
+      knownBarcode ? Promise.resolve(knownBarcode) : detectBarcode(imageData),
       identifyViaBackend(imageData),
     ]);
 
@@ -489,7 +516,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
   }, []);
 
 
-  const captureImage = useCallback(() => {
+  const captureImage = useCallback((knownBarcode?: string) => {
     if (!videoRef.current || !canvasRef.current) return;
     
     // Set loading state explicitly before processing to avoid UI stall feeling
@@ -541,7 +568,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
             // Pause video
             video.pause();
             
-            analyzeImage(imageData);
+            analyzeImage(imageData, knownBarcode);
         } catch (err) {
             console.error("Capture error:", err);
             setIsAnalyzing(false);
@@ -549,6 +576,38 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
         }
     }, 50);
   }, [analyzeImage]);
+
+  // Decode barcodes continuously from the live preview (not just the captured still).
+  // A barcode is an exact identifier regardless of photo sharpness, so there's no need
+  // to wait for the phone-stillness timer once one is readable — capture immediately.
+  useEffect(() => {
+    if (!isOpen || isInitializing || capturedImage || isAnalyzing || error) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    let cancelled = false;
+    let controls: IScannerControls | undefined;
+
+    liveBarcodeReader
+      .decodeFromVideoElement(video, (result, _decodeErr, ctrl) => {
+        controls = ctrl;
+        if (cancelled || !result) return;
+        cancelled = true;
+        ctrl.stop();
+        if ('vibrate' in navigator) navigator.vibrate(50);
+        captureImage(result.getText());
+      })
+      .then(ctrl => {
+        controls = ctrl;
+        if (cancelled) ctrl.stop();
+      })
+      .catch(err => console.warn('Live barcode scanning unavailable:', err));
+
+    return () => {
+      cancelled = true;
+      controls?.stop();
+    };
+  }, [isOpen, isInitializing, capturedImage, isAnalyzing, error, captureImage]);
 
   // Auto-capture once the phone stops moving, instead of on a fixed timer.
   // Samples the video onto a tiny hidden canvas a few times a second and compares
@@ -566,9 +625,14 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     const STILL_SAMPLES_REQUIRED = 4; // consecutive still samples before capturing
     const SAMPLE_INTERVAL_MS = 150;
     const MAX_WAIT_MS = 4000;
+    // A still phone can still have a frame that's soft because autofocus is mid-hunt.
+    // Require the current frame's sharpness to be within this fraction of the best seen
+    // so far this settle window, not just "not moving", before it counts as a still sample.
+    const FOCUS_RATIO_MIN = 0.55;
 
     let lastFrame: Uint8ClampedArray | null = null;
     let stillCount = 0;
+    let bestSharpness = 0;
     let cancelled = false;
     let maxWaitTimer: ReturnType<typeof setTimeout> | undefined;
     let intervalId: ReturnType<typeof setInterval> | undefined;
@@ -589,6 +653,8 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
 
         ctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
         const frame = ctx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+        const sharpness = sharpnessScore(frame, sampleCanvas.width, sampleCanvas.height);
+        bestSharpness = Math.max(bestSharpness, sharpness);
 
         if (lastFrame) {
           let diffTotal = 0;
@@ -596,8 +662,9 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
             diffTotal += Math.abs(frame[i] - lastFrame[i]);
           }
           const avgDiff = diffTotal / (frame.length / 4);
+          const isFocused = bestSharpness === 0 || sharpness >= bestSharpness * FOCUS_RATIO_MIN;
 
-          if (avgDiff < STILL_THRESHOLD) {
+          if (avgDiff < STILL_THRESHOLD && isFocused) {
             stillCount += 1;
             setIsHolding(true);
           } else {
@@ -722,22 +789,41 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                 )}
                 
                 <canvas ref={canvasRef} aria-hidden="true" style={{ display: 'none' }} />
-                <canvas ref={motionCanvasRef} aria-hidden="true" width={32} height={24} style={{ display: 'none' }} />
+                {/* Sized up from the original 32x24 so the sharpness/focus check has enough detail to be meaningful. */}
+                <canvas ref={motionCanvasRef} aria-hidden="true" width={64} height={48} style={{ display: 'none' }} />
 
-                {/* Viewfinder / Guidance */}
+                {/* Viewfinder / Guidance — corner brackets rather than a solid box, so the
+                    frame doesn't visually imply items must be square/squat (tubes, bottles,
+                    long tools all fit fine; nothing outside this area is actually cropped,
+                    the full photo is always captured). */}
                 {!capturedImage && !isInitializing && (
-                     <Box aria-hidden="true" sx={{ 
-                        position: 'absolute', 
-                        top: '50%', 
-                        left: '50%', 
+                     <Box aria-hidden="true" sx={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        width: '80%',
-                        height: '60%',
-                        border: '2px solid',
-                        borderColor: isHolding ? 'success.main' : 'rgba(255,255,255,0.7)',
-                        borderRadius: 3,
-                        transition: 'border-color 0.2s ease',
+                        width: '88%',
+                        height: '78%',
                     }}>
+                        {[
+                          { top: 0, left: 0, borderTop: 3, borderLeft: 3, borderTopLeftRadius: 12 },
+                          { top: 0, right: 0, borderTop: 3, borderRight: 3, borderTopRightRadius: 12 },
+                          { bottom: 0, left: 0, borderBottom: 3, borderLeft: 3, borderBottomLeftRadius: 12 },
+                          { bottom: 0, right: 0, borderBottom: 3, borderRight: 3, borderBottomRightRadius: 12 },
+                        ].map((corner, i) => (
+                          <Box
+                            key={i}
+                            sx={{
+                              position: 'absolute',
+                              width: 32,
+                              height: 32,
+                              borderColor: isHolding ? 'success.main' : 'rgba(255,255,255,0.8)',
+                              borderStyle: 'solid',
+                              transition: 'border-color 0.2s ease',
+                              ...corner,
+                            }}
+                          />
+                        ))}
                         {/* Crosshair */}
                         <Box sx={{ position: 'absolute', top: '50%', left: '50%', width: 8, height: 8, bgcolor: 'secondary.main', transform: 'translate(-50%, -50%)', borderRadius: '50%' }} />
                     </Box>
@@ -818,7 +904,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
             <Box sx={{ p: 4, bgcolor: 'common.black', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 {!capturedImage && !isInitializing ? (
                     <Button 
-                        onClick={captureImage}
+                        onClick={() => captureImage()}
                         variant="contained" 
                         color="secondary" 
                         size="large"
