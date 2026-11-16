@@ -297,7 +297,11 @@ async function lookupBarcodeName(barcode: string): Promise<{ name: string; categ
   }
 }
 
-export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProps) {
+export function ObjectScanner({ isOpen, onClose, onIdentify, onLocation }: ObjectScannerProps) {
+  const onLocationRef = useRef(onLocation);
+  onLocationRef.current = onLocation;
+  const lastLocationRef = useRef<StorageLocation | null>(null);
+  const [seenLocation, setSeenLocation] = useState<StorageLocation | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const motionCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -805,6 +809,14 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                         muted
                         aria-label="Live camera view for identifying an item"
                     />
+                ) : null}
+                {seenLocation && (
+                  <Box role="status" sx={{ position: 'absolute', top: 12, left: 12, zIndex: 2, bgcolor: 'success.main', color: 'success.contrastText', px: 1.5, py: 0.75, borderRadius: 2, fontWeight: 700, fontSize: 14 }}>
+                    Location: {LOCATION_INFO[seenLocation].label}
+                  </Box>
+                )}
+                {capturedImage ? (
+                   <img 
                 ) : (
                    <img 
                       src={capturedImage} 
