@@ -93,6 +93,10 @@ export default function AddItemPage() {
         isOpen={showObjectScanner}
         onClose={() => setShowObjectScanner(false)}
         onIdentify={handleObjectIdentify}
+        onLocation={(loc) => {
+          setScannedLocation(loc);
+          toast({ title: 'Location set', description: LOCATION_INFO[loc].label });
+        }}
       />
     </Box>
   );

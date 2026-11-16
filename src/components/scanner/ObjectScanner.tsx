@@ -815,9 +815,7 @@ export function ObjectScanner({ isOpen, onClose, onIdentify, onLocation }: Objec
                     Location: {LOCATION_INFO[seenLocation].label}
                   </Box>
                 )}
-                {capturedImage ? (
-                   <img 
-                ) : (
+                {capturedImage && (
                    <img 
                       src={capturedImage} 
                       alt="Photo you just captured of the item being identified" 

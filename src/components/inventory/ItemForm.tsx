@@ -158,6 +158,10 @@ export function ItemForm({
         name: identifiedObject.name,
         category: identifiedObject.category,
         barcode: identifiedObject.barcode || prev.barcode,
+        ...Object.fromEntries(Object.entries(identifiedObject.details ?? {}).filter(([k, v]) => v && k !== 'notes')),
+        notes: identifiedObject.details?.notes
+          ? [prev.notes, identifiedObject.details.notes].filter(Boolean).join('\n')
+          : prev.notes,
         photos: identifiedObject.image ? [identifiedObject.image, ...prev.photos].slice(0, 20) : prev.photos,
       }));
       toast({
