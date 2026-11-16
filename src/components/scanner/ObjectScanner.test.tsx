@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ObjectScanner } from './ObjectScanner';
 
+vi.mock('@/lib/scanLabel', () => ({ scanLabelViaCloud: vi.fn().mockResolvedValue(null) }));
+
 vi.mock('@/lib/database', () => ({
   API_URL: 'http://localhost:3001/api/inventory',
   getHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' }),

@@ -20,11 +20,16 @@ import {
 } from '@mui/material';
 import { ItemCategory } from '@/types';
 import { API_URL, getHeaders } from '@/lib/database';
+import { scanLabelViaCloud, type ScannedDetails } from '@/lib/scanLabel';
+import { parseLocationBarcode } from '@/services/barcode';
+import { LOCATION_INFO, type StorageLocation } from '@/types';
 
 interface ObjectScannerProps {
   isOpen: boolean;
   onClose: () => void;
   onIdentify: (result: ObjectScanResult) => void;
+  /** Called when a location sticker (SMLOC:…) is seen in the live view; scanning continues. */
+  onLocation?: (location: StorageLocation) => void;
 }
 
 export interface ObjectScanResult {
@@ -34,6 +39,8 @@ export interface ObjectScanResult {
   image?: string;
   /** UPC/EAN barcode read from the item's packaging, if one was visible */
   barcode?: string;
+  /** Extra label fields read by the cloud scanner */
+  details?: ScannedDetails;
 }
 
 const MEDICAL_SUPPLY_PATTERNS: { keywords: string[]; name: string; category: ItemCategory }[] = [
@@ -290,7 +297,11 @@ async function lookupBarcodeName(barcode: string): Promise<{ name: string; categ
   }
 }
 
-export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProps) {
+export function ObjectScanner({ isOpen, onClose, onIdentify, onLocation }: ObjectScannerProps) {
+  const onLocationRef = useRef(onLocation);
+  onLocationRef.current = onLocation;
+  const lastLocationRef = useRef<StorageLocation | null>(null);
+  const [seenLocation, setSeenLocation] = useState<StorageLocation | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const motionCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -421,12 +432,19 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
     // If the live scanner already decoded a barcode, skip re-detecting on the
     // (possibly-compressed) still — the live decode is often more reliable anyway.
     setAnalysisStage('Reading label and barcode…');
-    const [barcode, visionResult] = await Promise.all([
+    const [localBarcode, cloud] = await Promise.all([
       knownBarcode ? Promise.resolve(knownBarcode) : detectBarcode(imageData),
-      identifyViaBackend(imageData),
+      scanLabelViaCloud(imageData),
     ]);
-
-    let result: ObjectScanResult | null = visionResult;
+    if (cloud) {
+      setAnalysisStage(null);
+      if ('vibrate' in navigator) navigator.vibrate(100);
+      setIsAnalyzing(false);
+      setPendingResult({ ...cloud, image: imageData, barcode: localBarcode || cloud.barcode });
+      return;
+    }
+    const barcode = localBarcode;
+    let result: ObjectScanResult | null = await identifyViaBackend(imageData);
 
     // A barcode is an exact product identifier, so trust a successful lookup
     // over a low-confidence vision guess.
@@ -592,6 +610,17 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
       .decodeFromVideoElement(video, (result, _decodeErr, ctrl) => {
         controls = ctrl;
         if (cancelled || !result) return;
+        const loc = parseLocationBarcode(result.getText());
+        if (loc) {
+          // Location sticker: record it and keep scanning for the product.
+          if (lastLocationRef.current !== loc) {
+            lastLocationRef.current = loc;
+            setSeenLocation(loc);
+            onLocationRef.current?.(loc);
+            if ('vibrate' in navigator) navigator.vibrate([40, 40, 40]);
+          }
+          return;
+        }
         cancelled = true;
         ctrl.stop();
         if ('vibrate' in navigator) navigator.vibrate(50);
@@ -780,7 +809,13 @@ export function ObjectScanner({ isOpen, onClose, onIdentify }: ObjectScannerProp
                         muted
                         aria-label="Live camera view for identifying an item"
                     />
-                ) : (
+                ) : null}
+                {seenLocation && (
+                  <Box role="status" sx={{ position: 'absolute', top: 12, left: 12, zIndex: 2, bgcolor: 'success.main', color: 'success.contrastText', px: 1.5, py: 0.75, borderRadius: 2, fontWeight: 700, fontSize: 14 }}>
+                    Location: {LOCATION_INFO[seenLocation].label}
+                  </Box>
+                )}
+                {capturedImage && (
                    <img 
                       src={capturedImage} 
                       alt="Photo you just captured of the item being identified" 

@@ -1,0 +1,1 @@
+- Label scanning goes through the scan-label Lovable Cloud function (one AI vision call returns all form fields); the Express vision/OCR endpoints are only a fallback. Why: one round-trip is faster and needs no Lightsail keys.
